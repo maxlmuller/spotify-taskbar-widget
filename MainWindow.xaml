@@ -127,9 +127,10 @@
     <Border x:Name="Root" Background="#01000000" CornerRadius="8" Padding="8,3" Cursor="Hand"
             MouseLeftButtonDown="Root_MouseLeftButtonDown"
             MouseMove="Root_MouseMove"
-            MouseLeftButtonUp="Root_MouseLeftButtonUp">
+            MouseLeftButtonUp="Root_MouseLeftButtonUp"
+            ContextMenuOpening="Root_ContextMenuOpening">
         <Border.ContextMenu>
-            <ContextMenu>
+            <ContextMenu Closed="ContextMenu_Closed">
                 <MenuItem x:Name="MoveMenu" Header="Mover widget" IsCheckable="True" Click="MoveMode_Click"
                           ToolTip="Arrasta o widget para onde quiseres; desmarca para bloquear nessa posição"/>
                 <MenuItem Header="Repor posição automática" Click="ResetPos_Click"/>
@@ -233,7 +234,8 @@
 
             <!-- Slider de volume horizontal estilo Spotify -->
             <Popup x:Name="VolumePopup" PlacementTarget="{Binding ElementName=VolumeButton}"
-                   Placement="Top" AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="True">
+                   Placement="Top" AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="True"
+                   Closed="VolumePopup_Closed">
                 <Border Background="#282828" CornerRadius="6" Padding="12,10" Margin="6"
                         MouseLeave="VolumePopup_MouseLeave">
                     <StackPanel Orientation="Horizontal">

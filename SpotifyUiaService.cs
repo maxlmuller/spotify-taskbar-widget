@@ -77,6 +77,7 @@ public sealed class SpotifyUiaService
     {
         lock (_lock)
         {
+            IntPtr fg = Interop.GetForegroundWindow();
             try
             {
                 EnsureElements();
@@ -93,6 +94,10 @@ public sealed class SpotifyUiaService
                 Invalidate();
                 return false;
             }
+            finally
+            {
+                RestoreForeground(fg);
+            }
         }
     }
 
@@ -101,6 +106,7 @@ public sealed class SpotifyUiaService
     {
         lock (_lock)
         {
+            IntPtr fg = Interop.GetForegroundWindow();
             try
             {
                 EnsureElements();
@@ -113,7 +119,24 @@ public sealed class SpotifyUiaService
                 Invalidate();
                 return false;
             }
+            finally
+            {
+                RestoreForeground(fg);
+            }
         }
+    }
+
+    /// <summary>
+    /// Os cliques de acessibilidade podem fazer o Chromium puxar o foco para a
+    /// janela do Spotify (mesmo minimizada), deixando atalhos globais como o
+    /// PrintScreen sem destino. Repõe a janela que estava em primeiro plano.
+    /// </summary>
+    private static void RestoreForeground(IntPtr before)
+    {
+        if (before == IntPtr.Zero) return;
+        Thread.Sleep(80); // o roubo de foco do Chromium é assíncrono
+        if (Interop.GetForegroundWindow() != before)
+            Interop.SetForegroundWindow(before);
     }
 
     /// <summary>Volume atual do slider do próprio Spotify, 0..1.</summary>
@@ -143,6 +166,7 @@ public sealed class SpotifyUiaService
     {
         lock (_lock)
         {
+            IntPtr fg = Interop.GetForegroundWindow();
             try
             {
                 EnsureElements();
@@ -157,6 +181,12 @@ public sealed class SpotifyUiaService
             {
                 Invalidate();
                 return false;
+            }
+            finally
+            {
+                // Sem pausa: chamado repetidamente enquanto se arrasta o slider
+                if (fg != IntPtr.Zero && Interop.GetForegroundWindow() != fg)
+                    Interop.SetForegroundWindow(fg);
             }
         }
     }

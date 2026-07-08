@@ -384,6 +384,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        CaptureForeground();
         _volLoading = true;
         double? current = await Task.Run(() => _uia.GetVolume()) ?? SpotifyVolume.GetVolume();
         VolumeSlider.Value = (current ?? 1.0) * 100;
@@ -429,6 +430,34 @@ public partial class MainWindow : Window
     }
 
     private void VolumePopup_MouseLeave(object sender, MouseEventArgs e) => VolumePopup.IsOpen = false;
+
+    private void VolumePopup_Closed(object sender, EventArgs e) => RestoreForeground();
+
+    // ---------- Preservação do foco ----------
+    // O popup do volume e o menu de contexto ativam janelas próprias do WPF;
+    // quando fecham, o foco pode ficar órfão e atalhos globais (PrintScreen,
+    // Win+Shift+S) deixam de responder até se clicar noutra janela.
+
+    private IntPtr _fgBeforeUi;
+
+    private void Root_ContextMenuOpening(object sender, ContextMenuEventArgs e) => CaptureForeground();
+
+    private void ContextMenu_Closed(object sender, RoutedEventArgs e) => RestoreForeground();
+
+    private void CaptureForeground()
+    {
+        IntPtr fg = Interop.GetForegroundWindow();
+        _fgBeforeUi = fg == _hwnd ? IntPtr.Zero : fg;
+    }
+
+    private void RestoreForeground()
+    {
+        if (_fgBeforeUi == IntPtr.Zero) return;
+        IntPtr target = _fgBeforeUi;
+        _fgBeforeUi = IntPtr.Zero;
+        if (Interop.GetForegroundWindow() != target)
+            Interop.SetForegroundWindow(target);
+    }
 
     // ---------- Mover (só quando ativado no menu) / clique para abrir o Spotify ----------
 
