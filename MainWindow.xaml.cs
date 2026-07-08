@@ -48,7 +48,8 @@ public partial class MainWindow : Window
     private bool _artDirty = true;
     private bool _refreshing;
     private bool _volLoading;
-    private bool _spotifyRunning = true;
+    private bool _spotifyPresent = true;
+    private DateTime _sessionLostAt = DateTime.MinValue;
 
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
     private readonly object _anchorLock = new();
@@ -152,7 +153,7 @@ public partial class MainWindow : Window
             rightLimit = br.X - 4;
         }
 
-        if (_spotifyRunning)
+        if (_spotifyPresent)
             ApplyResponsiveLayout(rightLimit - left);
 
         if (!_dragging)
@@ -164,7 +165,7 @@ public partial class MainWindow : Window
         // Esconder quando há uma app em ecrã inteiro (jogos, vídeos), ou quando
         // o Spotify está fechado (a menos que o botão de abrir esteja ativado)
         bool hide = Interop.IsForegroundFullscreen(_hwnd, tray)
-                    || (!_spotifyRunning && !_settings.ShowLauncher);
+                    || (!_spotifyPresent && !_settings.ShowLauncher);
         var wanted = hide ? Visibility.Hidden : Visibility.Visible;
         if (Visibility != wanted)
         {
@@ -262,26 +263,33 @@ public partial class MainWindow : Window
         _refreshing = true;
         try
         {
-            _spotifyRunning = Process.GetProcessesByName("Spotify").Length > 0;
+            bool processAlive = Process.GetProcessesByName("Spotify").Length > 0;
+            TrackInfo? track = processAlive ? await _media.GetTrackAsync() : null;
 
-            // Spotify fechado: ou o widget está escondido (UpdatePosition trata),
-            // ou mostra apenas o botão de abrir
-            var launcherWanted = !_spotifyRunning ? Visibility.Visible : Visibility.Collapsed;
-            var contentWanted = !_spotifyRunning ? Visibility.Collapsed : Visibility.Visible;
-            if (LauncherPanel.Visibility != launcherWanted)
+            // Perder a sessão com o processo ainda vivo = fecho do Spotify em curso
+            // (o processo demora 1-2 s a morrer). Esconder já, sem estados intermédios.
+            if (processAlive && track == null && _lastTrackKey.Length > 0)
             {
-                LauncherPanel.Visibility = launcherWanted;
-                ContentPanel.Visibility = contentWanted;
-            }
-            if (!_spotifyRunning)
-            {
+                _sessionLostAt = DateTime.UtcNow;
                 _lastTrackKey = "";
+            }
+            bool closing = processAlive && track == null &&
+                           DateTime.UtcNow - _sessionLostAt < TimeSpan.FromSeconds(6);
+            _spotifyPresent = processAlive && !closing;
+
+            var launcherWanted = !_spotifyPresent && _settings.ShowLauncher
+                ? Visibility.Visible : Visibility.Collapsed;
+            var contentWanted = _spotifyPresent ? Visibility.Visible : Visibility.Collapsed;
+            if (LauncherPanel.Visibility != launcherWanted) LauncherPanel.Visibility = launcherWanted;
+            if (ContentPanel.Visibility != contentWanted) ContentPanel.Visibility = contentWanted;
+
+            if (!_spotifyPresent)
+            {
                 _liked = null;
                 VolumePopup.IsOpen = false;
+                UpdatePosition(); // esconder/mostrar imediatamente, sem esperar o timer
                 return;
             }
-
-            TrackInfo? track = await _media.GetTrackAsync();
 
             if (track == null || string.IsNullOrWhiteSpace(track.Title))
             {
