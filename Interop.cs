@@ -132,6 +132,21 @@ internal static class Interop
     public static void EnsureTopmost(IntPtr hwnd) =>
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
+    // Hook de eventos do sistema: reagir no instante em que a janela ativa muda
+    // (clicar na taskbar traz a barra para cima do widget até re-afirmarmos)
+    public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+        int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
+        WinEventDelegate pfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+
     /// <summary>
     /// True se a janela em primeiro plano estiver em ecrã inteiro no mesmo monitor
     /// da barra de tarefas (jogos, vídeos) — nesse caso o widget deve esconder-se.

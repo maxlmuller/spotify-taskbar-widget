@@ -79,6 +79,10 @@ public partial class MainWindow : Window
         incoming == _isPlayingUi || DateTime.UtcNow - _playToggledAt > TimeSpan.FromSeconds(2);
 
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
+    // Hook de foreground: o delegate tem de ficar referenciado (senão o GC apanha-o)
+    private Interop.WinEventDelegate? _winEventProc;
+    private IntPtr _winEventHook;
+
     private readonly object _anchorLock = new();
     private double? _widgetsRightPx;
     private double? _startLeftPx;
@@ -168,6 +172,14 @@ public partial class MainWindow : Window
             ApplyThemeIfChanged();
         };
         _positionTimer.Start();
+
+        // Clicar na taskbar põe a barra por cima do widget; re-afirmar o topmost
+        // no instante da mudança de janela ativa (o timer sozinho deixava flicker)
+        _winEventProc = (_, _, _, _, _, _, _) => Dispatcher.BeginInvoke(UpdatePosition);
+        _winEventHook = Interop.SetWinEventHook(
+            Interop.EVENT_SYSTEM_FOREGROUND, Interop.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _winEventProc, 0, 0, Interop.WINEVENT_OUTOFCONTEXT);
+        Closed += (_, _) => { if (_winEventHook != IntPtr.Zero) Interop.UnhookWinEvent(_winEventHook); };
 
         await _media.InitializeAsync();
         _media.Changed += () =>
