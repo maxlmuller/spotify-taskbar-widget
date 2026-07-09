@@ -72,6 +72,7 @@ internal static class UpdateService
             CreateNoWindow = true,
         });
 
+        App.IntentionalExit = true;
         System.Windows.Application.Current.Shutdown();
     }
 

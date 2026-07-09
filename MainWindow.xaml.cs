@@ -226,11 +226,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private IntPtr _ownerTray;
+
     private void UpdatePosition()
     {
         IntPtr tray = GetTargetTray();
         if (tray == IntPtr.Zero || !Interop.GetWindowRect(tray, out var r))
             return;
+
+        // Janela "owned" pela taskbar: o gestor de janelas mantém-na SEMPRE acima
+        // do dono — elimina o flicker de z-order por construção. Se o Explorer
+        // reiniciar, a janela morre com a barra e o OnClosed recria o widget.
+        if (tray != _ownerTray && _hwnd != IntPtr.Zero)
+        {
+            Interop.SetWindowLongPtr(_hwnd, Interop.GWLP_HWNDPARENT, tray);
+            _ownerTray = tray;
+            Interop.EnsureTopmost(_hwnd);
+        }
 
         var source = PresentationSource.FromVisual(this);
         if (source?.CompositionTarget == null)
@@ -1149,5 +1161,36 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+    private void Exit_Click(object sender, RoutedEventArgs e)
+    {
+        App.IntentionalExit = true;
+        Application.Current.Shutdown();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        _positionTimer.Stop();
+        _trackTimer.Stop();
+        if (!App.IntentionalExit)
+            _ = RecreateAfterTaskbarRestartAsync(); // Explorer reiniciou e levou a janela
+    }
+
+    /// <summary>Como o widget é owned pela taskbar, um reinício do Explorer
+    /// destrói a janela — esperar pela barra nova e recriar o widget.</summary>
+    private static async Task RecreateAfterTaskbarRestartAsync()
+    {
+        for (int i = 0; i < 120; i++)
+        {
+            await Task.Delay(1000);
+            if (Interop.FindWindow("Shell_TrayWnd", null) != IntPtr.Zero)
+            {
+                await Task.Delay(2000); // deixar a barra nova assentar
+                new MainWindow().Show();
+                return;
+            }
+        }
+        App.IntentionalExit = true;
+        Application.Current.Shutdown();
+    }
 }
