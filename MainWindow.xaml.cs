@@ -151,7 +151,15 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         ApplyLanguage();
-        AutoStartMenu.IsChecked = IsAutoStartEnabled();
+        if (PackagedApp.IsPackaged)
+        {
+            UpdateMenu.Visibility = Visibility.Collapsed; // a Store trata das atualizações
+            _ = InitStartupTaskStateAsync();
+        }
+        else
+        {
+            AutoStartMenu.IsChecked = IsAutoStartEnabled();
+        }
         LauncherMenu.IsChecked = _settings.ShowLauncher;
         ProgressMenu.IsChecked = _settings.ShowProgress;
         ApplyThemeIfChanged();
@@ -194,7 +202,8 @@ public partial class MainWindow : Window
         _trackTimer.Tick += (_, _) => _ = RefreshTrackAsync();
         _trackTimer.Start();
 
-        _ = CheckUpdatesQuietlyAsync();
+        if (!PackagedApp.IsPackaged)
+            _ = CheckUpdatesQuietlyAsync();
 
         await RefreshTrackAsync();
     }
@@ -1134,8 +1143,40 @@ public partial class MainWindow : Window
         UpdatePosition();
     }
 
-    private void AutoStart_Click(object sender, RoutedEventArgs e)
+    private const string StartupTaskId = "SpotifyTaskbarWidgetStartup";
+
+    private async Task InitStartupTaskStateAsync()
     {
+        try
+        {
+            var task = await Windows.ApplicationModel.StartupTask.GetAsync(StartupTaskId);
+            AutoStartMenu.IsChecked = task.State is Windows.ApplicationModel.StartupTaskState.Enabled
+                or Windows.ApplicationModel.StartupTaskState.EnabledByPolicy;
+        }
+        catch { }
+    }
+
+    private async void AutoStart_Click(object sender, RoutedEventArgs e)
+    {
+        if (PackagedApp.IsPackaged)
+        {
+            try
+            {
+                var task = await Windows.ApplicationModel.StartupTask.GetAsync(StartupTaskId);
+                if (AutoStartMenu.IsChecked)
+                {
+                    var state = await task.RequestEnableAsync();
+                    AutoStartMenu.IsChecked = state == Windows.ApplicationModel.StartupTaskState.Enabled;
+                }
+                else
+                {
+                    task.Disable();
+                }
+            }
+            catch { }
+            return;
+        }
+
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
