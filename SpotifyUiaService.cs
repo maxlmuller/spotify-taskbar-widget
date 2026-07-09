@@ -116,7 +116,14 @@ public sealed class SpotifyUiaService
         if (name.Contains("playlist", StringComparison.OrdinalIgnoreCase))
             return true; // já está nos favoritos
 
-        ((InvokePattern)like.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+        // O Spotify varia o tipo do botão consoante a versão/estado:
+        // toggle (aria-pressed), botão simples, ou menu (quando já guardada)
+        if (like.TryGetCurrentPattern(TogglePattern.Pattern, out object? toggle))
+            ((TogglePattern)toggle).Toggle();
+        else if (like.TryGetCurrentPattern(InvokePattern.Pattern, out object? invoke))
+            ((InvokePattern)invoke).Invoke();
+        else
+            return false; // sem padrão utilizável → clique real como recurso
 
         for (int i = 0; i < 4; i++)
         {
@@ -131,6 +138,67 @@ public sealed class SpotifyUiaService
         }
         return false; // não confirmado → o chamador tenta o atalho de teclado
     });
+
+    /// <summary>Recurso quando os padrões de acessibilidade falham: restaura a
+    /// janela do Spotify por instantes e faz um clique de rato real no botão de
+    /// favoritos, confirmando o resultado no fim.</summary>
+    public bool AddToFavoritesByClick()
+    {
+        lock (_lock)
+        {
+            try
+            {
+                EnsureGroups();
+                var like = FindLikeButton();
+                if (like == null) return false;
+                if ((like.Current.Name ?? "").Contains("playlist", StringComparison.OrdinalIgnoreCase))
+                    return true; // já está nos favoritos
+
+                var proc = Process.GetProcessesByName("Spotify")
+                    .FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
+                if (proc == null) return false;
+
+                IntPtr wnd = proc.MainWindowHandle;
+                IntPtr prevFg = Interop.GetForegroundWindow();
+                bool wasMinimized = Interop.IsIconic(wnd);
+                Interop.GetCursorPos(out var prevCursor);
+                try
+                {
+                    if (wasMinimized)
+                        Interop.ShowWindow(wnd, Interop.SW_RESTORE);
+                    Interop.SetForegroundWindow(wnd);
+                    Thread.Sleep(450);
+
+                    like = FindLikeButton(); // retângulos frescos com a janela visível
+                    if (like == null) return false;
+                    var r = like.Current.BoundingRectangle;
+                    if (r.IsEmpty) return false;
+
+                    Interop.SetCursorPos((int)(r.Left + r.Width / 2), (int)(r.Top + r.Height / 2));
+                    Thread.Sleep(60);
+                    Interop.mouse_event(Interop.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                    Interop.mouse_event(Interop.MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+                    Thread.Sleep(350);
+
+                    string after = FindLikeButton()?.Current.Name ?? "";
+                    return after.Contains("playlist", StringComparison.OrdinalIgnoreCase);
+                }
+                finally
+                {
+                    Interop.SetCursorPos(prevCursor.X, prevCursor.Y);
+                    if (wasMinimized)
+                        Interop.ShowWindow(wnd, Interop.SW_MINIMIZE);
+                    if (prevFg != IntPtr.Zero)
+                        Interop.SetForegroundWindow(prevFg);
+                }
+            }
+            catch
+            {
+                Invalidate();
+                return false;
+            }
+        }
+    }
 
     /// <summary>Um clique no botão do Spotify: desligado → aleatório → inteligente → desligado.</summary>
     public bool CycleShuffle() => DoWithRetry(() =>

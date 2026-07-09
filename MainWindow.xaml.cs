@@ -463,13 +463,7 @@ public partial class MainWindow : Window
                 liked = true;
             _liked = liked;
 
-            RepeatIcon.Fill = repeatMode is RepeatMode.Context or RepeatMode.Track
-                ? SpotifyGreen
-                : (repeatMode == RepeatMode.Off ? Subdued : DimWhite);
-            RepeatDot.Visibility = repeatMode is RepeatMode.Context or RepeatMode.Track
-                ? Visibility.Visible : Visibility.Collapsed;
-            RepeatOneBadge.Visibility = repeatMode == RepeatMode.Track
-                ? Visibility.Visible : Visibility.Collapsed;
+            ApplyRepeatVisual(repeatMode);
 
             LikeIcon.Data = liked == true ? CheckCircleGeo : AddCircleGeo;
             LikeIcon.Fill = liked == true ? SpotifyGreen : (liked == false ? Subdued : DimWhite);
@@ -481,21 +475,7 @@ public partial class MainWindow : Window
             else if (track.IsShuffle == true && mode is ShuffleMode.Off or ShuffleMode.Unknown)
                 mode = ShuffleMode.On;
 
-            ShuffleIcon.Fill = mode switch
-            {
-                ShuffleMode.On or ShuffleMode.Smart => SpotifyGreen,
-                ShuffleMode.Off => Subdued,
-                _ => DimWhite,
-            };
-            ShuffleDot.Visibility = mode is ShuffleMode.On or ShuffleMode.Smart
-                ? Visibility.Visible : Visibility.Collapsed;
-            ShuffleSmartStar.Visibility = mode == ShuffleMode.Smart ? Visibility.Visible : Visibility.Collapsed;
-            ShuffleButton.ToolTip = mode switch
-            {
-                ShuffleMode.Smart => L.TipShuffleSmart,
-                ShuffleMode.On => L.TipShuffleOn,
-                _ => L.TipShuffle,
-            };
+            ApplyShuffleVisual(mode);
 
             if (keyChanged || _artDirty)
             {
@@ -537,6 +517,36 @@ public partial class MainWindow : Window
 
     // ---------- Controlos ----------
 
+    private void ApplyShuffleVisual(ShuffleMode mode)
+    {
+        ShuffleIcon.Fill = mode switch
+        {
+            ShuffleMode.On or ShuffleMode.Smart => SpotifyGreen,
+            ShuffleMode.Off => Subdued,
+            _ => DimWhite,
+        };
+        ShuffleDot.Visibility = mode is ShuffleMode.On or ShuffleMode.Smart
+            ? Visibility.Visible : Visibility.Collapsed;
+        ShuffleSmartStar.Visibility = mode == ShuffleMode.Smart ? Visibility.Visible : Visibility.Collapsed;
+        ShuffleButton.ToolTip = mode switch
+        {
+            ShuffleMode.Smart => L.TipShuffleSmart,
+            ShuffleMode.On => L.TipShuffleOn,
+            _ => L.TipShuffle,
+        };
+    }
+
+    private void ApplyRepeatVisual(RepeatMode mode)
+    {
+        RepeatIcon.Fill = mode is RepeatMode.Context or RepeatMode.Track
+            ? SpotifyGreen
+            : (mode == RepeatMode.Off ? Subdued : DimWhite);
+        RepeatDot.Visibility = mode is RepeatMode.Context or RepeatMode.Track
+            ? Visibility.Visible : Visibility.Collapsed;
+        RepeatOneBadge.Visibility = mode == RepeatMode.Track
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>Atualização leve disparada pelos eventos de timeline (frequentes).</summary>
     private void RefreshTimeline()
     {
@@ -569,7 +579,20 @@ public partial class MainWindow : Window
 
     private async void Shuffle_Click(object sender, RoutedEventArgs e)
     {
-        // Clique no botão do próprio Spotify: cicla desligado → aleatório → inteligente
+        // Feedback imediato: cicla localmente; a leitura de estado corrige se preciso
+        var next = _uiaState.Shuffle switch
+        {
+            ShuffleMode.Off => ShuffleMode.On,
+            ShuffleMode.On => ShuffleMode.Smart,
+            ShuffleMode.Smart => ShuffleMode.Off,
+            _ => ShuffleMode.Unknown,
+        };
+        if (next != ShuffleMode.Unknown)
+        {
+            _uiaState = (_uiaState.Liked, next, _uiaState.Repeat);
+            ApplyShuffleVisual(next);
+        }
+
         bool ok = await Task.Run(() => _uia.CycleShuffle());
         if (!ok)
             await _media.ToggleShuffleAsync(); // sem janela do Spotify: só liga/desliga
@@ -580,6 +603,20 @@ public partial class MainWindow : Window
 
     private async void Repeat_Click(object sender, RoutedEventArgs e)
     {
+        // Feedback imediato: cicla localmente; a leitura de estado corrige se preciso
+        var next = _uiaState.Repeat switch
+        {
+            RepeatMode.Off => RepeatMode.Context,
+            RepeatMode.Context => RepeatMode.Track,
+            RepeatMode.Track => RepeatMode.Off,
+            _ => RepeatMode.Unknown,
+        };
+        if (next != RepeatMode.Unknown)
+        {
+            _uiaState = (_uiaState.Liked, _uiaState.Shuffle, next);
+            ApplyRepeatVisual(next);
+        }
+
         bool ok = await Task.Run(() => _uia.CycleRepeat());
         if (!ok)
             await _media.CycleRepeatAsync(); // sem janela do Spotify: tentar via SMTC
@@ -601,8 +638,7 @@ public partial class MainWindow : Window
 
         bool ok = await Task.Run(() => _uia.AddToFavorites());
         if (!ok)
-            await Task.Run(SpotifyActions.LikeCurrentTrack); // recurso: atalho de teclado
-        await Task.Delay(400);
+            await Task.Run(() => _uia.AddToFavoritesByClick()); // recurso: clique real
         _uiaDirty = true;
         await RefreshTrackAsync();
     }
