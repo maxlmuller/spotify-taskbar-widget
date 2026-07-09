@@ -412,7 +412,16 @@ public partial class MainWindow : Window
         try
         {
             bool processAlive = Process.GetProcessesByName("Spotify").Length > 0;
-            TrackInfo? track = processAlive ? await _media.GetTrackAsync() : null;
+
+            // As chamadas SMTC podem ficar penduradas para sempre numa sessão em
+            // teardown (Spotify a fechar/reabrir) — sem timeout, a flag _refreshing
+            // ficava presa e o widget congelava até reiniciar
+            TrackInfo? track = null;
+            if (processAlive)
+            {
+                try { track = await _media.GetTrackAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch (TimeoutException) { }
+            }
 
             // Perder a sessão com o processo ainda vivo = fecho do Spotify em curso
             // (o processo demora 1-2 s a morrer). Esconder já, sem estados intermédios.
@@ -483,7 +492,9 @@ public partial class MainWindow : Window
             if (keyChanged || _uiaDirty || DateTime.UtcNow - _lastUiaStateAt > TimeSpan.FromSeconds(5))
             {
                 _uiaDirty = false;
-                var state = await Task.Run(() => _uia.GetState(track.Title));
+                var state = (Liked: (bool?)null, Shuffle: ShuffleMode.Unknown, Repeat: RepeatMode.Unknown, Fresh: false);
+                try { state = await Task.Run(() => _uia.GetState(track.Title)).WaitAsync(TimeSpan.FromSeconds(8)); }
+                catch (TimeoutException) { }
                 _lastStateFresh = state.Fresh;
                 // Grupo ainda da faixa anterior (zombie): não mostrar o tick antigo
                 _uiaState = (state.Fresh ? state.Liked : null, state.Shuffle, state.Repeat);
@@ -516,7 +527,9 @@ public partial class MainWindow : Window
             {
                 _lastTrackKey = key;
                 _artDirty = false;
-                byte[]? bytes = await _media.GetThumbnailAsync();
+                byte[]? bytes = null;
+                try { bytes = await _media.GetThumbnailAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch (TimeoutException) { }
                 if (bytes != null)
                 {
                     ArtBrush.ImageSource = ToBitmap(bytes);
@@ -590,10 +603,14 @@ public partial class MainWindow : Window
             ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>Atualização leve disparada pelos eventos de timeline (frequentes).</summary>
-    private void RefreshTimeline()
+    /// <summary>Atualização leve disparada pelos eventos de timeline (frequentes).
+    /// Fora da thread de UI e com timeout: o SMTC pode pendurar em sessões mortas.</summary>
+    private async void RefreshTimeline()
     {
-        if (_media.GetTimeline() is not { } tl) return;
+        (TimeSpan Position, TimeSpan Duration, bool IsPlaying)? tlMaybe = null;
+        try { tlMaybe = await Task.Run(() => _media.GetTimeline()).WaitAsync(TimeSpan.FromSeconds(3)); }
+        catch (TimeoutException) { }
+        if (tlMaybe is not { } tl) return;
         _duration = tl.Duration;
         if (AcceptPlayingState(tl.IsPlaying))
         {
