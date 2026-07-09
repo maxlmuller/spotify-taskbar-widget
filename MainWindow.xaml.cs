@@ -18,8 +18,8 @@ public partial class MainWindow : Window
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "SpotifyTaskbarWidget";
 
-    // Link de donativos (Ko-fi/BuyMeACoffee/GitHub Sponsors); vazio = item de menu oculto
-    private const string DonateUrl = "";
+    // Link de donativos; vazio = item de menu oculto
+    private const string DonateUrl = "https://ko-fi.com/mechanicwb2";
 
     // Ícones do Spotify (paths 16x16 do leitor web)
     private static readonly Geometry PlayGeo = Geometry.Parse("M3 1.713a.7.7 0 0 1 1.05-.607l10.89 6.288a.7.7 0 0 1 0 1.212L4.05 14.894A.7.7 0 0 1 3 14.288V1.713z");

@@ -85,6 +85,13 @@ slider de volume horizontal com preenchimento verde e bolinha branca.
   (play/pausa/faixa/capa continuam a funcionar) e podes corrigir as
   heurísticas em `SpotifyUiaService.cs` e lançar uma release nova.
 
+## Apoiar / Support
+
+O widget é grátis e de código aberto. Se te for útil, podes apoiar o
+desenvolvimento: **[ko-fi.com/mechanicwb2](https://ko-fi.com/mechanicwb2)** ☕
+*The widget is free and open source — if you find it useful, you can support
+development on [Ko-fi](https://ko-fi.com/mechanicwb2).*
+
 ## Compilar
 
 Requer o .NET 8 SDK:
