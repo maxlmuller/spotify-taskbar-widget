@@ -4,6 +4,7 @@ using System.Windows.Automation;
 namespace SpotifyTaskbarWidget;
 
 public enum ShuffleMode { Unknown, Off, On, Smart }
+public enum RepeatMode { Unknown, Off, Context, Track }
 
 /// <summary>
 /// Lê e controla o estado dos favoritos e do modo aleatório através da árvore
@@ -35,9 +36,10 @@ public sealed class SpotifyUiaService
     private readonly object _lock = new();
     private AutomationElement? _likeButton;
     private AutomationElement? _shuffleButton;
+    private AutomationElement? _repeatCheckbox;
     private AutomationElement? _volumeSlider;
 
-    public (bool? Liked, ShuffleMode Shuffle) GetState()
+    public (bool? Liked, ShuffleMode Shuffle, RepeatMode Repeat) GetState()
     {
         lock (_lock)
         {
@@ -61,12 +63,52 @@ public sealed class SpotifyUiaService
                     mode = smart ? (disable ? ShuffleMode.Smart : ShuffleMode.On) : ShuffleMode.Off;
                 }
 
-                return (liked, mode);
+                // A checkbox de repetição usa aria-checked: false=desligado,
+                // true=playlist, mixed=faixa — independente do idioma
+                var repeat = RepeatMode.Unknown;
+                if (_repeatCheckbox != null)
+                {
+                    var toggle = (TogglePattern)_repeatCheckbox.GetCurrentPattern(TogglePattern.Pattern);
+                    repeat = toggle.Current.ToggleState switch
+                    {
+                        ToggleState.Off => RepeatMode.Off,
+                        ToggleState.On => RepeatMode.Context,
+                        ToggleState.Indeterminate => RepeatMode.Track,
+                        _ => RepeatMode.Unknown,
+                    };
+                }
+
+                return (liked, mode, repeat);
             }
             catch
             {
                 Invalidate();
-                return (null, ShuffleMode.Unknown);
+                return (null, ShuffleMode.Unknown, RepeatMode.Unknown);
+            }
+        }
+    }
+
+    /// <summary>Um clique no botão do Spotify: desligado → playlist → faixa → desligado.</summary>
+    public bool CycleRepeat()
+    {
+        lock (_lock)
+        {
+            IntPtr fg = Interop.GetForegroundWindow();
+            try
+            {
+                EnsureElements();
+                if (_repeatCheckbox == null) return false;
+                ((TogglePattern)_repeatCheckbox.GetCurrentPattern(TogglePattern.Pattern)).Toggle();
+                return true;
+            }
+            catch
+            {
+                Invalidate();
+                return false;
+            }
+            finally
+            {
+                RestoreForeground(fg);
             }
         }
     }
@@ -195,17 +237,19 @@ public sealed class SpotifyUiaService
     {
         _likeButton = null;
         _shuffleButton = null;
+        _repeatCheckbox = null;
         _volumeSlider = null;
     }
 
     private void EnsureElements()
     {
-        if (_likeButton != null && _shuffleButton != null && _volumeSlider != null)
+        if (_likeButton != null && _shuffleButton != null && _repeatCheckbox != null && _volumeSlider != null)
         {
             try
             {
                 _ = _likeButton.Current.Name;
                 _ = _shuffleButton.Current.Name;
+                _ = _repeatCheckbox.Current.Name;
                 _ = _volumeSlider.Current.Name;
                 return;
             }
@@ -244,6 +288,7 @@ public sealed class SpotifyUiaService
 
             // Controlos do leitor: aleatório, anterior, play/pausa, seguinte (+ checkbox de repetição)
             var shuffle = buttons.Cast<AutomationElement>().OrderBy(SafeLeft).First();
+            var repeat = checkboxes.Cast<AutomationElement>().OrderBy(SafeLeft).First();
 
             // Grupo irmão com os links do título/artista → botão de favoritos mais à direita
             AutomationElement? like = null;
@@ -277,6 +322,7 @@ public sealed class SpotifyUiaService
             }
 
             _shuffleButton = shuffle;
+            _repeatCheckbox = repeat;
             _likeButton = like;
             _volumeSlider = volume;
             return true;

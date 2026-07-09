@@ -36,6 +36,39 @@ internal static class Interop
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindow(string lpClassName, string? lpWindowName);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string? lpszWindow);
+
+    /// <summary>Barras de tarefas dos monitores secundários (Win11: Shell_SecondaryTrayWnd).</summary>
+    public static List<IntPtr> GetSecondaryTrays()
+    {
+        var list = new List<IntPtr>();
+        IntPtr h = IntPtr.Zero;
+        while ((h = FindWindowEx(IntPtr.Zero, h, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero)
+            list.Add(h);
+        return list;
+    }
+
+    /// <summary>Limite esquerdo (px físicos) da área de ícones do sistema (relógio, rede…).</summary>
+    public static int? GetTrayNotifyLeft(IntPtr tray)
+    {
+        IntPtr notify = FindWindowEx(tray, IntPtr.Zero, "TrayNotifyWnd", null);
+        if (notify == IntPtr.Zero || !GetWindowRect(notify, out RECT r))
+            return null;
+        return r.Left;
+    }
+
+    /// <summary>True se a barra estiver deslizada para fora do ecrã (ocultação automática).</summary>
+    public static bool IsTaskbarHidden(IntPtr tray, RECT trayRect)
+    {
+        IntPtr mon = MonitorFromWindow(tray, MONITOR_DEFAULTTONEAREST);
+        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(mon, ref mi))
+            return false;
+        int visible = Math.Min(trayRect.Bottom, mi.rcMonitor.Bottom) - Math.Max(trayRect.Top, mi.rcMonitor.Top);
+        return visible < 10;
+    }
+
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 

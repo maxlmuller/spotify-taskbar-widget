@@ -9,6 +9,7 @@
     <RootNamespace>SpotifyTaskbarWidget</RootNamespace>
     <AssemblyName>SpotifyTaskbarWidget</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <Version>1.0.1</Version>
     <!-- Um único .exe no publish, para as atualizações substituírem só um ficheiro -->

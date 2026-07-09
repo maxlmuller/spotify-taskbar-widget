@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -23,10 +24,12 @@ public partial class MainWindow : Window
     private static readonly Geometry AddCircleGeo = Geometry.Parse("M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8z M11.75 8a.75.75 0 0 1-.75.75H8.75V11a.75.75 0 0 1-1.5 0V8.75H5a.75.75 0 0 1 0-1.5h2.25V5a.75.75 0 0 1 1.5 0v2.25H11a.75.75 0 0 1 .75.75z");
     private static readonly Geometry CheckCircleGeo = Geometry.Parse("M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm11.748-1.97a.75.75 0 0 0-1.06-1.06l-4.47 4.44-1.405-1.406a.75.75 0 1 0-1.061 1.06l2.466 2.467 5.53-5.5z");
 
-    // Cores do Spotify
+    // Cores do Spotify; as neutras dependem do tema da barra (claro/escuro)
     private static readonly Brush SpotifyGreen = new SolidColorBrush(Color.FromRgb(0x1E, 0xD7, 0x60));
-    private static readonly Brush Subdued = new SolidColorBrush(Color.FromRgb(0xB3, 0xB3, 0xB3));
-    private static readonly Brush DimWhite = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
+    private Brush Subdued = new SolidColorBrush(Color.FromRgb(0xB3, 0xB3, 0xB3));
+    private Brush DimWhite = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
+    private Brush _progressFillNormal = Brushes.White;
+    private bool? _lightTheme;
 
     private readonly MediaService _media = new();
     private readonly SpotifyUiaService _uia = new();
@@ -50,6 +53,12 @@ public partial class MainWindow : Window
     private bool _volLoading;
     private bool _spotifyPresent = true;
     private DateTime _sessionLostAt = DateTime.MinValue;
+
+    // Progresso: última posição conhecida + instante em que foi lida (interpolação)
+    private TimeSpan _duration;
+    private TimeSpan _basePosition;
+    private DateTime _basePositionAt;
+    private bool _isPlayingUi;
 
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
     private readonly object _anchorLock = new();
@@ -80,16 +89,25 @@ public partial class MainWindow : Window
     {
         AutoStartMenu.IsChecked = IsAutoStartEnabled();
         LauncherMenu.IsChecked = _settings.ShowLauncher;
+        ProgressMenu.IsChecked = _settings.ShowProgress;
+        ApplyThemeIfChanged();
+        RebuildMonitorMenu();
         BtnLikeMenu.IsChecked = _settings.ShowLike;
         BtnShuffleMenu.IsChecked = _settings.ShowShuffle;
         BtnPrevMenu.IsChecked = _settings.ShowPrev;
         BtnNextMenu.IsChecked = _settings.ShowNext;
+        BtnRepeatMenu.IsChecked = _settings.ShowRepeat;
         BtnVolumeMenu.IsChecked = _settings.ShowVolume;
         ApplyScale();
         UpdateSizeChecks();
 
         UpdatePosition();
-        _positionTimer.Tick += (_, _) => UpdatePosition();
+        _positionTimer.Tick += (_, _) =>
+        {
+            UpdatePosition();
+            UpdateProgressUi();
+            ApplyThemeIfChanged();
+        };
         _positionTimer.Start();
 
         await _media.InitializeAsync();
@@ -109,9 +127,35 @@ public partial class MainWindow : Window
 
     // ---------- Posicionamento na barra de tarefas ----------
 
+    /// <summary>Barra de tarefas escolhida nas definições (principal ou secundária).</summary>
+    private IntPtr GetTargetTray()
+    {
+        if (_settings.MonitorIndex > 0)
+        {
+            var secondaries = Interop.GetSecondaryTrays();
+            if (_settings.MonitorIndex <= secondaries.Count)
+                return secondaries[_settings.MonitorIndex - 1];
+        }
+        return Interop.FindWindow("Shell_TrayWnd", null);
+    }
+
+    private static bool IsTaskbarLeftAligned()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
+            return key?.GetValue("TaskbarAl") is int v && v == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private void UpdatePosition()
     {
-        IntPtr tray = Interop.FindWindow("Shell_TrayWnd", null);
+        IntPtr tray = GetTargetTray();
         if (tray == IntPtr.Zero || !Interop.GetWindowRect(tray, out var r))
             return;
 
@@ -135,11 +179,18 @@ public partial class MainWindow : Window
             startLeftPx = _startLeftPx;
         }
 
+        bool primaryTray = _settings.MonitorIndex == 0;
+        bool rightAnchored = false;
         double left, rightLimit;
-        if (_settings.AutoPosition)
+        if (!_settings.AutoPosition)
         {
-            // Alinhar a seguir ao botão de widgets/tempo; sem ele, à borda esquerda.
-            // Limite direito: nunca invadir os ícones centrados (botão Iniciar).
+            left = Math.Max(tl.X + 4, Math.Min(_settings.X, br.X - ActualWidth - 4));
+            rightLimit = br.X - 4;
+        }
+        else if (primaryTray && !IsTaskbarLeftAligned())
+        {
+            // Ícones centrados: alinhar a seguir ao botão de widgets/tempo; sem
+            // ele, à borda esquerda. Nunca invadir os ícones (botão Iniciar).
             left = widgetsRightPx.HasValue
                 ? m.Transform(new Point(widgetsRightPx.Value, 0)).X + 6
                 : tl.X + 12;
@@ -149,12 +200,18 @@ public partial class MainWindow : Window
         }
         else
         {
-            left = Math.Max(tl.X + 4, Math.Min(_settings.X, br.X - ActualWidth - 4));
-            rightLimit = br.X - 4;
+            // Ícones alinhados à esquerda (ou barra secundária): o espaço vazio
+            // está à direita — encostar antes dos ícones do sistema/relógio
+            rightAnchored = true;
+            int? notifyLeftPx = Interop.GetTrayNotifyLeft(tray);
+            rightLimit = notifyLeftPx.HasValue
+                ? m.Transform(new Point(notifyLeftPx.Value, 0)).X - 8
+                : br.X - 220;
+            left = rightLimit - ActualWidth;
         }
 
         if (_spotifyPresent)
-            ApplyResponsiveLayout(rightLimit - left);
+            ApplyResponsiveLayout(rightAnchored ? double.PositiveInfinity : rightLimit - left);
 
         if (!_dragging)
         {
@@ -162,10 +219,11 @@ public partial class MainWindow : Window
             if (Math.Abs(Left - left) > 0.5) Left = left;
         }
 
-        // Esconder quando há uma app em ecrã inteiro (jogos, vídeos), ou quando
-        // o Spotify está fechado (a menos que o botão de abrir esteja ativado)
+        // Esconder quando: app em ecrã inteiro; Spotify fechado (sem botão de
+        // abrir); ou a barra deslizou para fora (ocultação automática)
         bool hide = Interop.IsForegroundFullscreen(_hwnd, tray)
-                    || (!_spotifyPresent && !_settings.ShowLauncher);
+                    || (!_spotifyPresent && !_settings.ShowLauncher)
+                    || Interop.IsTaskbarHidden(tray, r);
         var wanted = hide ? Visibility.Hidden : Visibility.Visible;
         if (Visibility != wanted)
         {
@@ -193,11 +251,12 @@ public partial class MainWindow : Window
 
         double used = BasePart + PlayBtn + MinTextWidth;
 
-        bool prev = false, next = false, like = false, shuffle = false, volume = false;
+        bool prev = false, next = false, like = false, shuffle = false, repeat = false, volume = false;
         Take(ref prev, _settings.ShowPrev);
         Take(ref next, _settings.ShowNext);
         Take(ref like, _settings.ShowLike);
         Take(ref shuffle, _settings.ShowShuffle);
+        Take(ref repeat, _settings.ShowRepeat);
         Take(ref volume, _settings.ShowVolume);
 
         double text = Math.Max(MinTextWidth, Math.Min(MaxTextWidth, MinTextWidth + (avail - used)));
@@ -206,9 +265,13 @@ public partial class MainWindow : Window
         SetVis(NextButton, next);
         SetVis(LikeButton, like);
         SetVis(ShuffleButton, shuffle);
+        SetVis(RepeatButton, repeat);
         SetVis(VolumeButton, volume);
         if (Math.Abs(TextStack.Width - text) > 1)
+        {
             TextStack.Width = text;
+            UpdateMarquee();
+        }
 
         void Take(ref bool flag, bool wanted)
         {
@@ -286,10 +349,18 @@ public partial class MainWindow : Window
             if (!_spotifyPresent)
             {
                 _liked = null;
+                _duration = TimeSpan.Zero;
                 VolumePopup.IsOpen = false;
+                UpdateProgressUi();
                 UpdatePosition(); // esconder/mostrar imediatamente, sem esperar o timer
                 return;
             }
+
+            _duration = track?.Duration ?? TimeSpan.Zero;
+            _basePosition = track?.Position ?? TimeSpan.Zero;
+            _basePositionAt = DateTime.UtcNow;
+            _isPlayingUi = track?.IsPlaying == true;
+            UpdateProgressUi();
 
             if (track == null || string.IsNullOrWhiteSpace(track.Title))
             {
@@ -299,23 +370,36 @@ public partial class MainWindow : Window
                 ShuffleIcon.Fill = DimWhite;
                 ShuffleDot.Visibility = Visibility.Collapsed;
                 ShuffleSmartStar.Visibility = Visibility.Collapsed;
+                RepeatIcon.Fill = DimWhite;
+                RepeatDot.Visibility = Visibility.Collapsed;
+                RepeatOneBadge.Visibility = Visibility.Collapsed;
                 LikeIcon.Data = AddCircleGeo;
                 LikeIcon.Fill = DimWhite;
                 _liked = null;
                 ArtImage.Visibility = Visibility.Collapsed;
                 ArtPlaceholder.Visibility = Visibility.Visible;
                 _lastTrackKey = "";
+                UpdateMarquee();
                 return;
             }
 
             TitleText.Text = track.Title;
             ArtistText.Text = track.Artist;
+            UpdateMarquee();
             PlayPauseIcon.Data = track.IsPlaying ? PauseGeo : PlayGeo;
 
-            // Estado real (favoritos + modo aleatório) da árvore de acessibilidade
-            // do Spotify; o SMTC serve de rede de segurança para o on/off.
-            var (liked, uiaMode) = await Task.Run(() => _uia.GetState());
+            // Estado real (favoritos + aleatório + repetição) da árvore de
+            // acessibilidade do Spotify; o SMTC serve de rede de segurança.
+            var (liked, uiaMode, repeatMode) = await Task.Run(() => _uia.GetState());
             _liked = liked;
+
+            RepeatIcon.Fill = repeatMode is RepeatMode.Context or RepeatMode.Track
+                ? SpotifyGreen
+                : (repeatMode == RepeatMode.Off ? Subdued : DimWhite);
+            RepeatDot.Visibility = repeatMode is RepeatMode.Context or RepeatMode.Track
+                ? Visibility.Visible : Visibility.Collapsed;
+            RepeatOneBadge.Visibility = repeatMode == RepeatMode.Track
+                ? Visibility.Visible : Visibility.Collapsed;
 
             LikeIcon.Data = liked == true ? CheckCircleGeo : AddCircleGeo;
             LikeIcon.Fill = liked == true ? SpotifyGreen : (liked == false ? Subdued : DimWhite);
@@ -398,6 +482,15 @@ public partial class MainWindow : Window
         await RefreshTrackAsync();
     }
 
+    private async void Repeat_Click(object sender, RoutedEventArgs e)
+    {
+        bool ok = await Task.Run(() => _uia.CycleRepeat());
+        if (!ok)
+            await _media.CycleRepeatAsync(); // sem janela do Spotify: tentar via SMTC
+        await Task.Delay(400);
+        await RefreshTrackAsync();
+    }
+
     private async void Like_Click(object sender, RoutedEventArgs e)
     {
         if (_liked == true) return; // já está nos favoritos
@@ -464,6 +557,144 @@ public partial class MainWindow : Window
 
     private void VolumePopup_MouseLeave(object sender, MouseEventArgs e) => VolumePopup.IsOpen = false;
 
+    // ---------- Tema (barra clara/escura) ----------
+
+    private static bool IsSystemLightTheme()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("SystemUsesLightTheme") is int v && v == 1;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>A barra de tarefas segue o tema do SISTEMA (não o das apps);
+    /// numa barra clara os textos/ícones têm de escurecer.</summary>
+    private void ApplyThemeIfChanged()
+    {
+        bool light = IsSystemLightTheme();
+        if (_lightTheme == light) return;
+        _lightTheme = light;
+
+        Subdued = new SolidColorBrush(light ? Color.FromRgb(0x48, 0x48, 0x48) : Color.FromRgb(0xB3, 0xB3, 0xB3));
+        DimWhite = new SolidColorBrush(light ? Color.FromArgb(0x66, 0x00, 0x00, 0x00) : Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
+        _progressFillNormal = light ? Brushes.Black : Brushes.White;
+
+        TitleText.Foreground = light ? Brushes.Black : Brushes.White;
+        ArtistText.Foreground = Subdued;
+        LauncherText.Foreground = Subdued;
+        PrevIcon.Fill = Subdued;
+        NextIcon.Fill = Subdued;
+        VolumeIcon.Fill = Subdued;
+        ArtPlaceholder.Foreground = DimWhite;
+        ProgressTrack.Background = new SolidColorBrush(light ? Color.FromArgb(0x2E, 0x00, 0x00, 0x00) : Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+        if (!ProgressTrack.IsMouseOver)
+            ProgressFill.Background = _progressFillNormal;
+
+        // Botão play: círculo branco no escuro, preto no claro (como o Spotify)
+        PlayPauseButton.Background = light ? Brushes.Black : Brushes.White;
+        PlayPauseIcon.Fill = light ? Brushes.White : Brushes.Black;
+
+        _marqueeKey = ""; // sem efeito no texto, mas força refresh coerente
+        _ = RefreshTrackAsync();
+    }
+
+    // ---------- Marquee do título ----------
+
+    private string _marqueeKey = "";
+
+    /// <summary>Título maior do que a coluna de texto → scroll contínuo com pausas,
+    /// como no Spotify; caso contrário fica estático.</summary>
+    private void UpdateMarquee()
+    {
+        TitleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double textWidth = TitleText.DesiredSize.Width;
+        double clipWidth = TextStack.Width;
+
+        string key = $"{TitleText.Text}|{clipWidth:0}";
+        if (key == _marqueeKey) return;
+        _marqueeKey = key;
+
+        TitleShift.BeginAnimation(TranslateTransform.XProperty, null);
+        TitleShift.X = 0;
+
+        double overflow = textWidth - clipWidth;
+        if (overflow > 4)
+        {
+            TitleText.TextTrimming = TextTrimming.None;
+            TitleText.Width = textWidth;
+
+            double scrollSeconds = Math.Max(1.5, overflow / 25.0);
+            var anim = new DoubleAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
+            double t = 2.5; // pausa inicial
+            anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(t))));
+            t += scrollSeconds;
+            anim.KeyFrames.Add(new LinearDoubleKeyFrame(-(overflow + 12), KeyTime.FromTimeSpan(TimeSpan.FromSeconds(t))));
+            t += 1.5; // pausa no fim antes de recomeçar
+            anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(-(overflow + 12), KeyTime.FromTimeSpan(TimeSpan.FromSeconds(t))));
+            anim.Duration = TimeSpan.FromSeconds(t);
+            TitleShift.BeginAnimation(TranslateTransform.XProperty, anim);
+        }
+        else
+        {
+            TitleText.Width = double.NaN;
+            TitleText.TextTrimming = TextTrimming.CharacterEllipsis;
+        }
+    }
+
+    // ---------- Barra de progresso ----------
+
+    /// <summary>O Spotify só publica a posição de vez em quando; entre leituras,
+    /// a posição é interpolada com o relógio local enquanto está a tocar.</summary>
+    private void UpdateProgressUi()
+    {
+        bool show = _settings.ShowProgress && _spotifyPresent && _duration > TimeSpan.Zero;
+        var wanted = show ? Visibility.Visible : Visibility.Collapsed;
+        if (ProgressTrack.Visibility != wanted)
+            ProgressTrack.Visibility = wanted;
+        if (!show) return;
+
+        TimeSpan pos = _basePosition;
+        if (_isPlayingUi)
+            pos += DateTime.UtcNow - _basePositionAt;
+
+        double fraction = Math.Clamp(pos.TotalMilliseconds / _duration.TotalMilliseconds, 0, 1);
+        ProgressFill.Width = fraction * ProgressTrack.ActualWidth;
+    }
+
+    private async void Progress_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_moveMode) return; // em modo mover, o arrasto tem prioridade
+        e.Handled = true;      // não tratar como clique para abrir o Spotify
+
+        if (_duration <= TimeSpan.Zero || ProgressTrack.ActualWidth <= 0) return;
+        double fraction = Math.Clamp(e.GetPosition(ProgressTrack).X / ProgressTrack.ActualWidth, 0, 1);
+        var target = TimeSpan.FromTicks((long)(_duration.Ticks * fraction));
+
+        // Atualização otimista para a barra responder já
+        _basePosition = target;
+        _basePositionAt = DateTime.UtcNow;
+        UpdateProgressUi();
+
+        await _media.SeekAsync(target);
+    }
+
+    private void Progress_MouseEnter(object sender, MouseEventArgs e) => ProgressFill.Background = SpotifyGreen;
+    private void Progress_MouseLeave(object sender, MouseEventArgs e) => ProgressFill.Background = _progressFillNormal;
+
+    private void Progress_MenuClick(object sender, RoutedEventArgs e)
+    {
+        _settings.ShowProgress = ProgressMenu.IsChecked;
+        _settings.Save();
+        UpdateProgressUi();
+    }
+
     private void VolumePopup_Closed(object sender, EventArgs e) => RestoreForeground();
 
     // ---------- Preservação do foco ----------
@@ -473,7 +704,36 @@ public partial class MainWindow : Window
 
     private IntPtr _fgBeforeUi;
 
-    private void Root_ContextMenuOpening(object sender, ContextMenuEventArgs e) => CaptureForeground();
+    private void Root_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        CaptureForeground();
+        RebuildMonitorMenu();
+    }
+
+    /// <summary>Um item por barra de tarefas existente (a lista pode mudar ao ligar/desligar monitores).</summary>
+    private void RebuildMonitorMenu()
+    {
+        MonitorMenu.Items.Clear();
+        int count = Interop.GetSecondaryTrays().Count;
+        for (int i = 0; i <= count; i++)
+        {
+            int index = i;
+            var item = new MenuItem
+            {
+                Header = i == 0 ? "Principal" : $"Monitor {i + 1}",
+                IsCheckable = true,
+                IsChecked = _settings.MonitorIndex == i,
+            };
+            item.Click += (_, _) =>
+            {
+                _settings.MonitorIndex = index;
+                _settings.Save();
+                UpdatePosition();
+            };
+            MonitorMenu.Items.Add(item);
+        }
+        MonitorMenu.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void ContextMenu_Closed(object sender, RoutedEventArgs e) => RestoreForeground();
 
@@ -581,7 +841,7 @@ public partial class MainWindow : Window
     {
         SizeSmall.IsChecked = Math.Abs(_settings.Scale - 0.8) < 0.01;
         SizeNormal.IsChecked = Math.Abs(_settings.Scale - 1.0) < 0.01;
-        SizeLarge.IsChecked = Math.Abs(_settings.Scale - 1.15) < 0.01;
+        SizeLarge.IsChecked = _settings.Scale > 1.05;
     }
 
     private void Launcher_Click(object sender, RoutedEventArgs e)
@@ -598,6 +858,7 @@ public partial class MainWindow : Window
         _settings.ShowShuffle = BtnShuffleMenu.IsChecked;
         _settings.ShowPrev = BtnPrevMenu.IsChecked;
         _settings.ShowNext = BtnNextMenu.IsChecked;
+        _settings.ShowRepeat = BtnRepeatMenu.IsChecked;
         _settings.ShowVolume = BtnVolumeMenu.IsChecked;
         _settings.Save();
         UpdatePosition();

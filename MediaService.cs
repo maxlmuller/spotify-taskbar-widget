@@ -3,7 +3,8 @@ using Windows.Storage.Streams;
 
 namespace SpotifyTaskbarWidget;
 
-public sealed record TrackInfo(string Title, string Artist, bool IsPlaying, bool? IsShuffle);
+public sealed record TrackInfo(string Title, string Artist, bool IsPlaying, bool? IsShuffle,
+    TimeSpan Position, TimeSpan Duration);
 
 /// <summary>
 /// Lê a música atual através da API de media do Windows (SMTC).
@@ -48,6 +49,7 @@ public sealed class MediaService
             {
                 old.MediaPropertiesChanged -= OnMediaPropertiesChanged;
                 old.PlaybackInfoChanged -= OnPlaybackInfoChanged;
+                old.TimelinePropertiesChanged -= OnTimelineChanged;
             }
             catch { }
         }
@@ -57,6 +59,7 @@ public sealed class MediaService
         {
             chosen.MediaPropertiesChanged += OnMediaPropertiesChanged;
             chosen.PlaybackInfoChanged += OnPlaybackInfoChanged;
+            chosen.TimelinePropertiesChanged += OnTimelineChanged;
         }
 
         Changed?.Invoke();
@@ -66,6 +69,9 @@ public sealed class MediaService
         Changed?.Invoke();
 
     private void OnPlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args) =>
+        Changed?.Invoke();
+
+    private void OnTimelineChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args) =>
         Changed?.Invoke();
 
     public async Task<TrackInfo?> GetTrackAsync()
@@ -78,7 +84,13 @@ public sealed class MediaService
             var pi = s.GetPlaybackInfo();
             bool playing = pi?.PlaybackStatus ==
                            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-            return new TrackInfo(props?.Title ?? "", props?.Artist ?? "", playing, pi?.IsShuffleActive);
+
+            var tl = s.GetTimelineProperties();
+            TimeSpan position = tl?.Position ?? TimeSpan.Zero;
+            TimeSpan duration = tl != null ? tl.EndTime - tl.StartTime : TimeSpan.Zero;
+
+            return new TrackInfo(props?.Title ?? "", props?.Artist ?? "", playing, pi?.IsShuffleActive,
+                position, duration);
         }
         catch
         {
@@ -129,6 +141,31 @@ public sealed class MediaService
         var s = _session;
         if (s == null) return;
         try { await s.TrySkipPreviousAsync(); } catch { }
+    }
+
+    public async Task SeekAsync(TimeSpan position)
+    {
+        var s = _session;
+        if (s == null) return;
+        try { await s.TryChangePlaybackPositionAsync(position.Ticks); } catch { }
+    }
+
+    public async Task CycleRepeatAsync()
+    {
+        var s = _session;
+        if (s == null) return;
+        try
+        {
+            var current = s.GetPlaybackInfo()?.AutoRepeatMode ?? Windows.Media.MediaPlaybackAutoRepeatMode.None;
+            var next = current switch
+            {
+                Windows.Media.MediaPlaybackAutoRepeatMode.None => Windows.Media.MediaPlaybackAutoRepeatMode.List,
+                Windows.Media.MediaPlaybackAutoRepeatMode.List => Windows.Media.MediaPlaybackAutoRepeatMode.Track,
+                _ => Windows.Media.MediaPlaybackAutoRepeatMode.None,
+            };
+            await s.TryChangeAutoRepeatModeAsync(next);
+        }
+        catch { }
     }
 
     public async Task ToggleShuffleAsync()

@@ -11,17 +11,24 @@ public class WidgetSettings
     /// <summary>Posição horizontal manual (em unidades WPF/DIP), usada quando AutoPosition = false.</summary>
     public double X { get; set; } = 150;
 
-    /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.15 = grande).</summary>
+    /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.1 = grande).</summary>
     public double Scale { get; set; } = 1.0;
+
+    /// <summary>Barra de tarefas onde o widget vive: 0 = principal, 1+ = secundárias.</summary>
+    public int MonitorIndex { get; set; } = 0;
 
     /// <summary>Com o Spotify fechado: true mostra um botão "Abrir Spotify"; false esconde o widget.</summary>
     public bool ShowLauncher { get; set; } = false;
+
+    /// <summary>Barra de progresso da música no fundo do widget (clique para saltar).</summary>
+    public bool ShowProgress { get; set; } = true;
 
     // Botões visíveis (em ecrãs pequenos, os menos importantes escondem-se sozinhos)
     public bool ShowPrev { get; set; } = true;
     public bool ShowNext { get; set; } = true;
     public bool ShowLike { get; set; } = true;
     public bool ShowShuffle { get; set; } = true;
+    public bool ShowRepeat { get; set; } = true;
     public bool ShowVolume { get; set; } = true;
 
     private static string Dir =>
