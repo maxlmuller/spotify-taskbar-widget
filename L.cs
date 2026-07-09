@@ -41,6 +41,7 @@ internal static class L
     public static string AutoStart => Pt ? "Iniciar com o Windows" : "Start with Windows";
     public static string OpenSpotify => Pt ? "Abrir Spotify" : "Open Spotify";
     public static string CheckUpdates => Pt ? "Procurar atualizações" : "Check for updates";
+    public static string Donate => Pt ? "Apoiar o projeto ☕" : "Support the project ☕";
     public static string Exit => Pt ? "Sair" : "Quit";
 
     // Tooltips / estados

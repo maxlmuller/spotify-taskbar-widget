@@ -18,6 +18,9 @@ public partial class MainWindow : Window
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "SpotifyTaskbarWidget";
 
+    // Link de donativos (Ko-fi/BuyMeACoffee/GitHub Sponsors); vazio = item de menu oculto
+    private const string DonateUrl = "";
+
     // Ícones do Spotify (paths 16x16 do leitor web)
     private static readonly Geometry PlayGeo = Geometry.Parse("M3 1.713a.7.7 0 0 1 1.05-.607l10.89 6.288a.7.7 0 0 1 0 1.212L4.05 14.894A.7.7 0 0 1 3 14.288V1.713z");
     private static readonly Geometry PauseGeo = Geometry.Parse("M2.7 1a.7.7 0 0 0-.7.7v12.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7H2.7zm8 0a.7.7 0 0 0-.7.7v12.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7h-2.6z");
@@ -124,6 +127,8 @@ public partial class MainWindow : Window
         AutoStartMenu.Header = L.AutoStart;
         OpenSpotifyMenu.Header = L.OpenSpotify;
         UpdateMenu.Header = L.CheckUpdates;
+        DonateMenu.Header = L.Donate;
+        DonateMenu.Visibility = DonateUrl.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ExitMenu.Header = L.Exit;
 
         PrevButton.ToolTip = L.TipPrev;
@@ -1074,6 +1079,15 @@ public partial class MainWindow : Window
     }
 
     private void OpenSpotify_Click(object sender, RoutedEventArgs e) => SpotifyActions.OpenSpotifyWindow();
+
+    private void Donate_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(DonateUrl) { UseShellExecute = true });
+        }
+        catch { }
+    }
 
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
