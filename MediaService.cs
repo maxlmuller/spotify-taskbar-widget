@@ -4,7 +4,7 @@ using Windows.Storage.Streams;
 namespace SpotifyTaskbarWidget;
 
 public sealed record TrackInfo(string Title, string Artist, bool IsPlaying, bool? IsShuffle,
-    TimeSpan Position, TimeSpan Duration);
+    TimeSpan Position, TimeSpan Duration, DateTime PositionAtUtc);
 
 /// <summary>
 /// Lê a música atual através da API de media do Windows (SMTC).
@@ -79,7 +79,7 @@ public sealed class MediaService
         TimelineChanged?.Invoke();
 
     /// <summary>Leitura rápida da timeline (sem propriedades da faixa nem capa).</summary>
-    public (TimeSpan Position, TimeSpan Duration, bool IsPlaying)? GetTimeline()
+    public (TimeSpan Position, TimeSpan Duration, bool IsPlaying, DateTime PositionAtUtc)? GetTimeline()
     {
         var s = _session;
         if (s == null) return null;
@@ -89,7 +89,8 @@ public sealed class MediaService
             var pi = s.GetPlaybackInfo();
             return (tl?.Position ?? TimeSpan.Zero,
                     tl != null ? tl.EndTime - tl.StartTime : TimeSpan.Zero,
-                    pi?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing);
+                    pi?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing,
+                    tl?.LastUpdatedTime.UtcDateTime ?? DateTime.UtcNow);
         }
         catch
         {
@@ -111,9 +112,10 @@ public sealed class MediaService
             var tl = s.GetTimelineProperties();
             TimeSpan position = tl?.Position ?? TimeSpan.Zero;
             TimeSpan duration = tl != null ? tl.EndTime - tl.StartTime : TimeSpan.Zero;
+            DateTime positionAt = tl?.LastUpdatedTime.UtcDateTime ?? DateTime.UtcNow;
 
             return new TrackInfo(props?.Title ?? "", props?.Artist ?? "", playing, pi?.IsShuffleActive,
-                position, duration);
+                position, duration, positionAt);
         }
         catch
         {

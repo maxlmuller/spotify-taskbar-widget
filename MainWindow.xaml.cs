@@ -56,6 +56,7 @@ public partial class MainWindow : Window
     private bool _volLoading;
     private bool _spotifyPresent = true;
     private DateTime _sessionLostAt = DateTime.MinValue;
+    private DateTime _trackNullSince = DateTime.MinValue;
 
     // Progresso: última posição conhecida + instante em que foi lida (interpolação)
     private TimeSpan _duration;
@@ -423,8 +424,27 @@ public partial class MainWindow : Window
                 catch (TimeoutException) { }
             }
 
-            // Perder a sessão com o processo ainda vivo = fecho do Spotify em curso
-            // (o processo demora 1-2 s a morrer). Esconder já, sem estados intermédios.
+            // Nas mudanças de faixa, a sessão/título ficam vazios por umas centenas
+            // de ms — manter o estado atual no ecrã e re-verificar já, em vez de
+            // piscar placeholders ou esconder o widget
+            bool noData = track == null || string.IsNullOrWhiteSpace(track.Title);
+            if (processAlive && noData && _lastTrackKey.Length > 0)
+            {
+                if (_trackNullSince == DateTime.MinValue)
+                    _trackNullSince = DateTime.UtcNow;
+                if (DateTime.UtcNow - _trackNullSince < TimeSpan.FromSeconds(1.2))
+                {
+                    _ = QuickRecheckAsync();
+                    return;
+                }
+            }
+            else if (!noData)
+            {
+                _trackNullSince = DateTime.MinValue;
+            }
+
+            // Perder a sessão com o processo ainda vivo (de forma persistente) =
+            // fecho do Spotify em curso. Esconder, sem estados intermédios.
             if (processAlive && track == null && _lastTrackKey.Length > 0)
             {
                 _sessionLostAt = DateTime.UtcNow;
@@ -453,8 +473,22 @@ public partial class MainWindow : Window
             _duration = track?.Duration ?? TimeSpan.Zero;
             if (AcceptPlayingState(track?.IsPlaying == true))
             {
-                _basePosition = track?.Position ?? TimeSpan.Zero;
-                _basePositionAt = DateTime.UtcNow;
+                // Âncora no LastUpdatedTime do Windows (não no momento da leitura):
+                // re-ler um snapshot antigo dá o mesmo valor interpolado — sem saltos
+                TimeSpan pos = track?.Position ?? TimeSpan.Zero;
+                DateTime posAt = track?.PositionAtUtc ?? DateTime.UtcNow;
+                // Snapshot da faixa anterior (posição > duração, ou muito antigo
+                // numa faixa acabada de mudar): mostrar do início até assentar
+                bool stale = pos > _duration ||
+                             (track != null && track.Title + "|" + track.Artist != _lastTrackKey &&
+                              DateTime.UtcNow - posAt > TimeSpan.FromSeconds(5));
+                if (stale)
+                {
+                    pos = TimeSpan.Zero;
+                    posAt = DateTime.UtcNow;
+                }
+                _basePosition = pos;
+                _basePositionAt = posAt;
                 _isPlayingUi = track?.IsPlaying == true;
             }
             UpdateProgressUi();
@@ -607,15 +641,15 @@ public partial class MainWindow : Window
     /// Fora da thread de UI e com timeout: o SMTC pode pendurar em sessões mortas.</summary>
     private async void RefreshTimeline()
     {
-        (TimeSpan Position, TimeSpan Duration, bool IsPlaying)? tlMaybe = null;
+        (TimeSpan Position, TimeSpan Duration, bool IsPlaying, DateTime PositionAtUtc)? tlMaybe = null;
         try { tlMaybe = await Task.Run(() => _media.GetTimeline()).WaitAsync(TimeSpan.FromSeconds(3)); }
         catch (TimeoutException) { }
         if (tlMaybe is not { } tl) return;
         _duration = tl.Duration;
-        if (AcceptPlayingState(tl.IsPlaying))
+        if (AcceptPlayingState(tl.IsPlaying) && tl.Position <= tl.Duration)
         {
             _basePosition = tl.Position;
-            _basePositionAt = DateTime.UtcNow;
+            _basePositionAt = tl.PositionAtUtc;
             _isPlayingUi = tl.IsPlaying;
             SetPlayPauseIcon(tl.IsPlaying);
         }
@@ -709,6 +743,13 @@ public partial class MainWindow : Window
     {
         await Task.Delay(4000);
         _uiaDirty = true;
+        await RefreshTrackAsync();
+    }
+
+    /// <summary>Re-verificação rápida durante o vazio transitório das mudanças de faixa.</summary>
+    private async Task QuickRecheckAsync()
+    {
+        await Task.Delay(350);
         await RefreshTrackAsync();
     }
 
