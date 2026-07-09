@@ -203,9 +203,32 @@ public sealed class SpotifyUiaService
         }
     }
 
-    /// <summary>Define o volume no slider do próprio Spotify (a UI dele atualiza), 0..1.</summary>
+    private RangeValuePattern? _volumePattern;
+    private double _volMin;
+    private double _volMax = 1;
+
+    /// <summary>Define o volume no slider do próprio Spotify (a UI dele atualiza), 0..1.
+    /// Caminho rápido fora do lock: chamado repetidamente ao arrastar o slider,
+    /// não pode ficar atrás das leituras de estado.</summary>
     public bool SetVolume(double fraction)
     {
+        var pattern = _volumePattern;
+        if (pattern != null)
+        {
+            IntPtr fg = Interop.GetForegroundWindow();
+            try
+            {
+                pattern.SetValue(_volMin + Math.Clamp(fraction, 0, 1) * (_volMax - _volMin));
+                if (fg != IntPtr.Zero && Interop.GetForegroundWindow() != fg)
+                    Interop.SetForegroundWindow(fg);
+                return true;
+            }
+            catch
+            {
+                _volumePattern = null; // reconstruir abaixo
+            }
+        }
+
         lock (_lock)
         {
             IntPtr fg = Interop.GetForegroundWindow();
@@ -214,9 +237,11 @@ public sealed class SpotifyUiaService
                 EnsureElements();
                 if (_volumeSlider == null) return false;
                 var rv = (RangeValuePattern)_volumeSlider.GetCurrentPattern(RangeValuePattern.Pattern);
-                double min = rv.Current.Minimum, max = rv.Current.Maximum;
-                if (max <= min) return false;
-                rv.SetValue(min + Math.Clamp(fraction, 0, 1) * (max - min));
+                _volMin = rv.Current.Minimum;
+                _volMax = rv.Current.Maximum;
+                if (_volMax <= _volMin) return false;
+                _volumePattern = rv;
+                rv.SetValue(_volMin + Math.Clamp(fraction, 0, 1) * (_volMax - _volMin));
                 return true;
             }
             catch
@@ -226,7 +251,6 @@ public sealed class SpotifyUiaService
             }
             finally
             {
-                // Sem pausa: chamado repetidamente enquanto se arrasta o slider
                 if (fg != IntPtr.Zero && Interop.GetForegroundWindow() != fg)
                     Interop.SetForegroundWindow(fg);
             }
@@ -239,6 +263,7 @@ public sealed class SpotifyUiaService
         _shuffleButton = null;
         _repeatCheckbox = null;
         _volumeSlider = null;
+        _volumePattern = null;
     }
 
     private void EnsureElements()

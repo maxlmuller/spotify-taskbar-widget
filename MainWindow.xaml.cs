@@ -67,6 +67,14 @@ public partial class MainWindow : Window
     private DateTime _lastUiaStateAt = DateTime.MinValue;
     private bool _uiaDirty = true;
 
+    // Depois de um clique otimista, leituras antigas (pré-clique) chegam durante
+    // ~2 s e contradizem o novo estado — são ignoradas nesse intervalo
+    private DateTime _playToggledAt = DateTime.MinValue;
+    private DateTime _likedOptimisticAt = DateTime.MinValue;
+
+    private bool AcceptPlayingState(bool incoming) =>
+        incoming == _isPlayingUi || DateTime.UtcNow - _playToggledAt > TimeSpan.FromSeconds(2);
+
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
     private readonly object _anchorLock = new();
     private double? _widgetsRightPx;
@@ -405,9 +413,12 @@ public partial class MainWindow : Window
             }
 
             _duration = track?.Duration ?? TimeSpan.Zero;
-            _basePosition = track?.Position ?? TimeSpan.Zero;
-            _basePositionAt = DateTime.UtcNow;
-            _isPlayingUi = track?.IsPlaying == true;
+            if (AcceptPlayingState(track?.IsPlaying == true))
+            {
+                _basePosition = track?.Position ?? TimeSpan.Zero;
+                _basePositionAt = DateTime.UtcNow;
+                _isPlayingUi = track?.IsPlaying == true;
+            }
             UpdateProgressUi();
 
             if (track == null || string.IsNullOrWhiteSpace(track.Title))
@@ -434,7 +445,7 @@ public partial class MainWindow : Window
             TitleText.Text = track.Title;
             ArtistText.Text = track.Artist;
             UpdateMarquee();
-            PlayPauseIcon.Data = track.IsPlaying ? PauseGeo : PlayGeo;
+            PlayPauseIcon.Data = _isPlayingUi ? PauseGeo : PlayGeo;
 
             // Estado real (favoritos + aleatório + repetição) da árvore de
             // acessibilidade do Spotify; o SMTC serve de rede de segurança.
@@ -447,6 +458,9 @@ public partial class MainWindow : Window
                 _lastUiaStateAt = DateTime.UtcNow;
             }
             var (liked, uiaMode, repeatMode) = _uiaState;
+            // Depois de adicionar aos favoritos, ignorar "não gostado" antigo por 3 s
+            if (liked == false && DateTime.UtcNow - _likedOptimisticAt < TimeSpan.FromSeconds(3))
+                liked = true;
             _liked = liked;
 
             RepeatIcon.Fill = repeatMode is RepeatMode.Context or RepeatMode.Track
@@ -528,17 +542,22 @@ public partial class MainWindow : Window
     {
         if (_media.GetTimeline() is not { } tl) return;
         _duration = tl.Duration;
-        _basePosition = tl.Position;
-        _basePositionAt = DateTime.UtcNow;
-        _isPlayingUi = tl.IsPlaying;
-        PlayPauseIcon.Data = tl.IsPlaying ? PauseGeo : PlayGeo;
+        if (AcceptPlayingState(tl.IsPlaying))
+        {
+            _basePosition = tl.Position;
+            _basePositionAt = DateTime.UtcNow;
+            _isPlayingUi = tl.IsPlaying;
+            PlayPauseIcon.Data = tl.IsPlaying ? PauseGeo : PlayGeo;
+        }
         UpdateProgressUi();
     }
 
     private async void PlayPause_Click(object sender, RoutedEventArgs e)
     {
-        // Feedback imediato; os eventos do SMTC corrigem se o comando falhar
+        // Feedback imediato; leituras antigas são ignoradas por 2 s (grace) e
+        // depois disso o estado real do SMTC volta a mandar
         _isPlayingUi = !_isPlayingUi;
+        _playToggledAt = DateTime.UtcNow;
         PlayPauseIcon.Data = _isPlayingUi ? PauseGeo : PlayGeo;
         if (!_isPlayingUi)
             _basePosition += DateTime.UtcNow - _basePositionAt; // congelar posição
@@ -572,6 +591,13 @@ public partial class MainWindow : Window
     private async void Like_Click(object sender, RoutedEventArgs e)
     {
         if (_liked == true) return; // já está nos favoritos
+
+        // Feedback imediato; se falhar, a leitura de estado seguinte corrige
+        _liked = true;
+        _likedOptimisticAt = DateTime.UtcNow;
+        LikeIcon.Data = CheckCircleGeo;
+        LikeIcon.Fill = SpotifyGreen;
+        LikeButton.ToolTip = L.TipLiked;
 
         bool ok = await Task.Run(() => _uia.AddToFavorites());
         if (!ok)
