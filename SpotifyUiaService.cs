@@ -116,9 +116,13 @@ public sealed class SpotifyUiaService
         if (name.Contains("playlist", StringComparison.OrdinalIgnoreCase))
             return true; // já está nos favoritos
 
-        // O Spotify varia o tipo do botão consoante a versão/estado:
-        // toggle (aria-pressed), botão simples, ou menu (quando já guardada)
-        if (like.TryGetCurrentPattern(TogglePattern.Pattern, out object? toggle))
+        // O botão + atual do Spotify tem aria-haspopup, por isso o Chromium só
+        // expõe ExpandCollapse — e Expand() dispara o clique (kDoDefault), que
+        // numa faixa por guardar ADICIONA aos favoritos (verificado ao vivo).
+        // Toggle/Invoke ficam para versões antigas/futuras do Spotify.
+        if (like.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object? expand))
+            ((ExpandCollapsePattern)expand).Expand();
+        else if (like.TryGetCurrentPattern(TogglePattern.Pattern, out object? toggle))
             ((TogglePattern)toggle).Toggle();
         else if (like.TryGetCurrentPattern(InvokePattern.Pattern, out object? invoke))
             ((InvokePattern)invoke).Invoke();
