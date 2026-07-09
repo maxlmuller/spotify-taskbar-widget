@@ -289,7 +289,6 @@ public partial class MainWindow : Window
             taskEndPx = _taskEndPx;
         }
 
-        bool primaryTray = _settings.MonitorIndex == 0;
         bool rightAnchored = false;
         double rightAnchorLeftLimit = tl.X + 12;
         double left, rightLimit;
@@ -298,10 +297,11 @@ public partial class MainWindow : Window
             left = Math.Max(tl.X + 4, Math.Min(_settings.X, br.X - ActualWidth - 4));
             rightLimit = br.X - 4;
         }
-        else if (primaryTray && !IsTaskbarLeftAligned())
+        else if (!IsTaskbarLeftAligned())
         {
-            // Ícones centrados: alinhar a seguir ao botão de widgets/tempo; sem
-            // ele, à borda esquerda. Nunca invadir os ícones (botão Iniciar).
+            // Ícones centrados (em qualquer barra/monitor): o espaço livre está
+            // à esquerda — alinhar a seguir ao botão de widgets/tempo; sem ele,
+            // à borda esquerda. Nunca invadir os ícones (botão Iniciar).
             left = widgetsRightPx.HasValue
                 ? m.Transform(new Point(widgetsRightPx.Value, 0)).X + 6
                 : tl.X + 12;
