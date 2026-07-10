@@ -911,14 +911,18 @@ public partial class MainWindow : Window
         if (key == _marqueeKey) return;
         _marqueeKey = key;
 
-        // Repor a largura automática ANTES de medir: a largura fixa da faixa
-        // anterior limitava a medição — títulos mais compridos ficavam com o
-        // scroll curto (fim nunca aparecia) e mais curtos deixavam o texto
-        // em branco no fim do ciclo
-        TitleText.Width = double.NaN;
-        TitleText.TextTrimming = TextTrimming.None;
-        TitleText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        double textWidth = TitleText.DesiredSize.Width;
+        // Medir por métricas de fonte (FormattedText): medir o TextBlock via
+        // layout devolvia valores contaminados pela largura anterior/constrangida
+        // — o texto renderizava cortado e o scroll ficava com distância errada
+        var formatted = new FormattedText(
+            TitleText.Text,
+            System.Globalization.CultureInfo.CurrentUICulture,
+            FlowDirection.LeftToRight,
+            new Typeface(TitleText.FontFamily, TitleText.FontStyle, TitleText.FontWeight, TitleText.FontStretch),
+            TitleText.FontSize,
+            Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        double textWidth = Math.Ceiling(formatted.WidthIncludingTrailingWhitespace) + 2;
 
         TitleShift.BeginAnimation(TranslateTransform.XProperty, null);
         TitleShift.X = 0;
@@ -926,9 +930,6 @@ public partial class MainWindow : Window
         double overflow = textWidth - clipWidth;
         if (overflow > 4)
         {
-            TitleText.TextTrimming = TextTrimming.None;
-            TitleText.Width = textWidth;
-
             double scrollSeconds = Math.Max(1.5, overflow / 25.0);
             var anim = new DoubleAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
             double t = 2.5; // pausa inicial
@@ -941,10 +942,7 @@ public partial class MainWindow : Window
             anim.Duration = TimeSpan.FromSeconds(t);
             TitleShift.BeginAnimation(TranslateTransform.XProperty, anim);
         }
-        else
-        {
-            TitleText.TextTrimming = TextTrimming.CharacterEllipsis;
-        }
+        // Sem overflow: texto parado em X=0 (o Canvas nunca trunca a renderização)
     }
 
     // ---------- Barra de progresso ----------

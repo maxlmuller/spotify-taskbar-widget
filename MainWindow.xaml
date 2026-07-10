@@ -289,15 +289,18 @@
 
                 <!-- Título e artista (cores do Spotify: branco / #B3B3B3) -->
                 <StackPanel x:Name="TextStack" VerticalAlignment="Center" Margin="9,0,6,0" Width="150">
-                    <Grid x:Name="TitleClip" ClipToBounds="True">
+                    <!-- Canvas: mede o filho com espaço infinito, por isso o título
+                         renderiza SEMPRE completo (a Grid cortava-o à largura da
+                         célula e o marquee deslizava um texto já truncado) -->
+                    <Canvas x:Name="TitleClip" ClipToBounds="True" Height="16">
                         <TextBlock x:Name="TitleText" Text="Spotify" Foreground="White"
-                                   FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"
-                                   HorizontalAlignment="Left">
+                                   FontWeight="SemiBold" FontSize="12"
+                                   Canvas.Left="0" Canvas.Top="0">
                             <TextBlock.RenderTransform>
                                 <TranslateTransform x:Name="TitleShift"/>
                             </TextBlock.RenderTransform>
                         </TextBlock>
-                    </Grid>
+                    </Canvas>
                     <TextBlock x:Name="ArtistText" Text="nada a tocar" Foreground="#B3B3B3"
                                FontSize="11" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
