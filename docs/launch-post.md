@@ -1,6 +1,23 @@
 # Posts de lançamento
 
-## Reddit — r/Windows11 (também serve para r/coolgithubprojects, r/SideProject)
+## ⚠️ Onde publicar (r/Windows11 NÃO permite — regra 7, autopromoção)
+
+Por ordem de potencial:
+1. **Hacker News — "Show HN"** (news.ycombinator.com/submit): título
+   `Show HN: Open-source Spotify controls embedded in the Windows 11 taskbar`,
+   URL = repositório GitHub. Depois de submeter, escrever o primeiro comentário
+   com a história/detalhes técnicos (usar o corpo do post abaixo). O público do
+   HN adora utilitários open source com truques técnicos (UIA/acessibilidade).
+2. **r/coolgithubprojects** — existe para partilhar projetos GitHub; usar o
+   corpo abaixo, link do repo obrigatório no post.
+3. **r/SideProject** e **r/opensource** (flair "promotional") — acolhedores
+   para lançamentos.
+4. **r/windowsapps** — pequeno mas 100% no alvo.
+5. **X/Twitter** — sem restrições (post abaixo).
+6. Evitar: r/Windows11 e r/windows (regra anti-promo), r/spotify (proíbe apps
+   de terceiros).
+
+## Corpo do post (Reddit / primeiro comentário no HN)
 
 **Título:**
 > I made a free widget that puts your Spotify controls right inside the Windows 11 taskbar
