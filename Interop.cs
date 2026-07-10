@@ -71,7 +71,7 @@ internal static class Interop
     /// <summary>True se a barra estiver deslizada para fora do ecrã (ocultação automática).</summary>
     public static bool IsTaskbarHidden(IntPtr tray, RECT trayRect)
     {
-        IntPtr mon = MonitorFromWindow(tray, MONITOR_DEFAULTTONEAREST);
+        IntPtr mon = GetTrayMonitor(trayRect);
         var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (!GetMonitorInfo(mon, ref mi))
             return false;
@@ -116,6 +116,19 @@ internal static class Interop
 
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+    /// <summary>Monitor "casa" da barra de tarefas. Com ocultação automática, o
+    /// rect da barra desliza para FORA do ecrã — se houver um monitor disposto
+    /// abaixo, MonitorFromWindow devolve esse vizinho e as contas de visibilidade
+    /// saem contra o ecrã errado. O ponto logo acima da barra não sofre disso.</summary>
+    private static IntPtr GetTrayMonitor(RECT trayRect)
+    {
+        var pt = new POINT { X = (trayRect.Left + trayRect.Right) / 2, Y = trayRect.Top - 10 };
+        return MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    }
 
     [DllImport("user32.dll")]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
@@ -186,7 +199,9 @@ internal static class Interop
             return false;
 
         IntPtr monFg = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
-        IntPtr monTray = MonitorFromWindow(tray, MONITOR_DEFAULTTONEAREST);
+        IntPtr monTray = GetWindowRect(tray, out RECT tr)
+            ? GetTrayMonitor(tr)
+            : MonitorFromWindow(tray, MONITOR_DEFAULTTONEAREST);
         if (monFg != monTray)
             return false;
 
