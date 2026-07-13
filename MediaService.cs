@@ -26,7 +26,18 @@ public sealed class MediaService
 
     public async Task InitializeAsync()
     {
-        _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+        try
+        {
+            _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+        }
+        catch (Exception ex)
+        {
+            // Sem a API de sessões de media (edições N sem Media Feature Pack,
+            // WinRT avariado) o widget fica sem faixa mas não pode rebentar —
+            // deixar rasto para o utilizador poder reportar
+            Diag.Once("smtc-init", "Media session API unavailable (this is why nothing shows as playing): " + ex.Message);
+            return;
+        }
         _manager.SessionsChanged += (_, _) => PickSession();
         PickSession();
     }
@@ -43,8 +54,17 @@ public sealed class MediaService
             var sessions = _manager.GetSessions();
             chosen = sessions.FirstOrDefault(s =>
                 (s.SourceAppUserModelId ?? "").Contains("spotify", StringComparison.OrdinalIgnoreCase));
+            // Há sessões mas nenhuma é do Spotify: registar os IDs uma vez —
+            // é assim que se apanha um AUMID fora do padrão num report
+            if (chosen == null && sessions.Count > 0)
+                Diag.Once("no-spotify-session",
+                    "Media sessions present but none matches Spotify: " +
+                    string.Join(", ", sessions.Select(x => x.SourceAppUserModelId ?? "(null)")));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Diag.Once("get-sessions", "Reading media sessions failed: " + ex.Message);
+        }
 
         var old = _session;
         if (old != null)
@@ -117,8 +137,9 @@ public sealed class MediaService
             return new TrackInfo(props?.Title ?? "", props?.Artist ?? "", playing, pi?.IsShuffleActive,
                 position, duration, positionAt);
         }
-        catch
+        catch (Exception ex)
         {
+            Diag.Once("get-track", "Reading track from the Spotify session failed: " + ex.Message);
             return null;
         }
     }
