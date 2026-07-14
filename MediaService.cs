@@ -26,17 +26,27 @@ public sealed class MediaService
 
     public async Task InitializeAsync()
     {
-        try
+        // No arranque com o Windows o WinRT pode ainda não estar pronto — uma
+        // falha transitória aqui deixava o widget sem faixa a sessão INTEIRA.
+        // Insistir com recuo (4s→64s, ~2 min) antes de desistir de vez.
+        for (int attempt = 0; ; attempt++)
         {
-            _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-        }
-        catch (Exception ex)
-        {
-            // Sem a API de sessões de media (edições N sem Media Feature Pack,
-            // WinRT avariado) o widget fica sem faixa mas não pode rebentar —
-            // deixar rasto para o utilizador poder reportar
-            Diag.Once("smtc-init", "Media session API unavailable (this is why nothing shows as playing): " + ex.Message);
-            return;
+            try
+            {
+                _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+                break;
+            }
+            catch (Exception ex)
+            {
+                if (attempt >= 5)
+                {
+                    // Sem a API de sessões de media (edições N sem Media Feature
+                    // Pack, WinRT avariado) — deixar rasto para o report
+                    Diag.Once("smtc-init", "Media session API unavailable (this is why nothing shows as playing): " + ex.Message);
+                    return;
+                }
+                await Task.Delay(TimeSpan.FromSeconds(4 << attempt));
+            }
         }
         _manager.SessionsChanged += (_, _) => PickSession();
         PickSession();
@@ -54,12 +64,19 @@ public sealed class MediaService
             var sessions = _manager.GetSessions();
             chosen = sessions.FirstOrDefault(s =>
                 (s.SourceAppUserModelId ?? "").Contains("spotify", StringComparison.OrdinalIgnoreCase));
-            // Há sessões mas nenhuma é do Spotify: registar os IDs uma vez —
-            // é assim que se apanha um AUMID fora do padrão num report
+            // Há sessões mas nenhuma é do Spotify: só é anómalo se o Spotify
+            // estiver mesmo a correr (Chrome/YouTube com o Spotify fechado é o
+            // dia-a-dia normal — registá-lo enchia o log de falsos erros)
             if (chosen == null && sessions.Count > 0)
-                Diag.Once("no-spotify-session",
-                    "Media sessions present but none matches Spotify: " +
-                    string.Join(", ", sessions.Select(x => x.SourceAppUserModelId ?? "(null)")));
+            {
+                var procs = System.Diagnostics.Process.GetProcessesByName("Spotify");
+                bool spotifyRunning = procs.Length > 0;
+                foreach (var p in procs) p.Dispose();
+                if (spotifyRunning)
+                    Diag.Once("no-spotify-session",
+                        "Media sessions present but none matches Spotify: " +
+                        string.Join(", ", sessions.Select(x => x.SourceAppUserModelId ?? "(null)")));
+            }
         }
         catch (Exception ex)
         {

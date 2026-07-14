@@ -9,7 +9,12 @@ namespace SpotifyTaskbarWidget;
 /// </summary>
 internal static class TaskbarAnchors
 {
-    public static (double? widgetsRight, double? startLeft, double? taskButtonsRight) Get(IntPtr tray)
+    /// <summary>Ok=false significa que a LEITURA falhou (UIA lançou exceção) —
+    /// as âncoras anteriores continuam válidas. Ok=true com um valor null
+    /// significa que o elemento não existe mesmo (ex.: widgets desativados).
+    /// Sem esta distinção, uma falha transitória era tratada como "botão
+    /// desapareceu" e o widget aterrava em cima do botão do tempo.</summary>
+    public static (bool Ok, double? widgetsRight, double? startLeft, double? taskButtonsRight) Get(IntPtr tray)
     {
         double? widgetsRight = null, startLeft = null, taskButtonsRight = null;
         try
@@ -48,7 +53,10 @@ internal static class TaskbarAnchors
                     taskButtonsRight = r.Right;
             }
         }
-        catch { }
-        return (widgetsRight, startLeft, taskButtonsRight);
+        catch
+        {
+            return (false, null, null, null);
+        }
+        return (true, widgetsRight, startLeft, taskButtonsRight);
     }
 }

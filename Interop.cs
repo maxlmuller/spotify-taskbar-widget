@@ -70,19 +70,27 @@ internal static class Interop
 
     /// <summary>Píxeis da barra atualmente dentro do ecrã (para saber se está
     /// assente, escondida, ou a meio da animação de revelar/esconder).
-    /// Devolve também o fundo do monitor "casa" da barra, para o recorte.</summary>
-    public static int GetTaskbarVisiblePx(RECT trayRect, out int monitorBottomPx)
+    /// Devolve também o fundo do monitor "casa" e o fundo da área de trabalho —
+    /// a diferença entre os dois é a altura REAL desenhada da barra (a reserva
+    /// de appbar), que vale para qualquer altura de barra; com ocultação
+    /// automática não há reserva e o chamador usa a heurística de 48 DIP.</summary>
+    public static int GetTaskbarVisiblePx(RECT trayRect, out int monitorBottomPx, out int workAreaBottomPx)
     {
         IntPtr mon = GetTrayMonitor(trayRect);
         var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
         if (!GetMonitorInfo(mon, ref mi))
         {
             monitorBottomPx = trayRect.Bottom;
+            workAreaBottomPx = trayRect.Bottom;
             return trayRect.Bottom - trayRect.Top; // sem info: assumir assente
         }
         monitorBottomPx = mi.rcMonitor.Bottom;
+        workAreaBottomPx = mi.rcWork.Bottom;
         return Math.Min(trayRect.Bottom, mi.rcMonitor.Bottom) - Math.Max(trayRect.Top, mi.rcMonitor.Top);
     }
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -259,26 +267,6 @@ internal static class Interop
             or "XamlExplorerHostIslandWindow")
             return false;
 
-        // CoreWindow só é inocente quando pertence à shell (menu Iniciar,
-        // pesquisa, centro de notificações). Jogos/apps UWP em ecrã inteiro
-        // (ex.: Forza da Store) usam a MESMA classe — excluí-la às cegas
-        // deixava o widget visível por cima do jogo (issue #5).
-        if (cls is "Windows.UI.Core.CoreWindow" or "ApplicationFrameWindow")
-        {
-            GetWindowThreadProcessId(fg, out uint pid);
-            try
-            {
-                string proc = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName;
-                if (proc is "explorer" or "StartMenuExperienceHost" or "SearchHost"
-                    or "ShellExperienceHost" or "ShellHost" or "SearchApp" or "LockApp")
-                    return false;
-            }
-            catch
-            {
-                return false; // processo já morreu: tratar como shell (inócuo)
-            }
-        }
-
         IntPtr monFg = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
         IntPtr monTray = GetWindowRect(tray, out RECT tr)
             ? GetTrayMonitor(tr)
@@ -293,7 +281,33 @@ internal static class Interop
         if (!GetMonitorInfo(monFg, ref mi))
             return false;
 
-        return wr.Left <= mi.rcMonitor.Left && wr.Top <= mi.rcMonitor.Top
+        bool coversMonitor = wr.Left <= mi.rcMonitor.Left && wr.Top <= mi.rcMonitor.Top
             && wr.Right >= mi.rcMonitor.Right && wr.Bottom >= mi.rcMonitor.Bottom;
+        if (!coversMonitor)
+            return false;
+
+        // Cobre o ecrã todo. Estas classes servem tanto overlays inofensivos da
+        // shell (menu Iniciar, emojis/ditado, recorte de ecrã) como jogos UWP em
+        // ecrã inteiro (Forza da Store, issue #5) — distinguir pelo processo.
+        // Só AQUI se paga o lookup de processo: janelas que não cobrem o ecrã
+        // nunca chegam cá (antes corria para qualquer app UWP em foco).
+        if (cls is "Windows.UI.Core.CoreWindow" or "ApplicationFrameWindow")
+        {
+            GetWindowThreadProcessId(fg, out uint pid);
+            try
+            {
+                using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+                if (p.ProcessName is "explorer" or "StartMenuExperienceHost" or "SearchHost"
+                    or "ShellExperienceHost" or "ShellHost" or "SearchApp" or "SearchUI"
+                    or "Cortana" or "LockApp" or "TextInputHost" or "ScreenClippingHost")
+                    return false;
+            }
+            catch
+            {
+                return false; // processo já morreu: tratar como shell (inócuo)
+            }
+        }
+
+        return true;
     }
 }

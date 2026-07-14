@@ -111,11 +111,25 @@ public partial class MainWindow : Window
 
     // Âncoras da barra (píxeis físicos), atualizadas em background via UI Automation
     // Hook de foreground: o delegate tem de ficar referenciado (senão o GC apanha-o)
-    private Interop.WinEventDelegate? _winEventProc;
-    private IntPtr _winEventHook;
+    // Um só hook de foreground para o processo inteiro: com N janelas, N hooks
+    // davam N callbacks e N pipelines completos por CADA mudança de foco no OS
+    private static Interop.WinEventDelegate? _fgProc;
+    private static IntPtr _fgHook;
+
+    private static void EnsureForegroundHook()
+    {
+        if (_fgHook != IntPtr.Zero) return;
+        _fgProc = (_, _, _, _, _, _, _) =>
+        {
+            foreach (var win in Instances)
+                win.Dispatcher.BeginInvoke((Action)win.UpdatePosition);
+        };
+        _fgHook = Interop.SetWinEventHook(
+            Interop.EVENT_SYSTEM_FOREGROUND, Interop.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _fgProc, 0, 0, Interop.WINEVENT_OUTOFCONTEXT);
+    }
 
     private readonly object _anchorLock = new();
-    private int _widgetsMisses;
     private double? _widgetsRightPx;
     private double? _startLeftPx;
     private double? _taskEndPx;
@@ -150,6 +164,7 @@ public partial class MainWindow : Window
         ResetPosMenu.Header = L.ResetAutoPos;
         MonitorMenu.Header = L.MonitorMenu;
         SizeMenuItem.Header = L.SizeMenu;
+        OpacityMenuItem.Header = L.OpacityMenu;
         SizeSmall.Header = L.SizeSmall;
         SizeNormal.Header = L.SizeNormal;
         SizeLarge.Header = L.SizeLarge;
@@ -214,6 +229,23 @@ public partial class MainWindow : Window
             if (VolumePopup.Child != null &&
                 PresentationSource.FromVisual(VolumePopup.Child) is HwndSource src)
                 Interop.EnsureTopmost(src.Handle);
+
+            // Aberto via roda, o rato pode nunca ENTRAR no popup — o MouseLeave
+            // nunca dispararia e ele ficava aberto para sempre (suprimindo o
+            // ReassertTopmost). Watchdog: fechar quando o rato não está nem no
+            // popup nem no botão.
+            _volPopupWatchdog?.Stop();
+            _volPopupWatchdog = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            _volPopupWatchdog.Tick += (_, _) =>
+            {
+                if (!VolumePopup.IsOpen ||
+                    (!VolumePopupBorder.IsMouseOver && !VolumeButton.IsMouseOver))
+                {
+                    _volPopupWatchdog?.Stop();
+                    VolumePopup.IsOpen = false;
+                }
+            };
+            _volPopupWatchdog.Start();
         };
 
         UpdatePosition();
@@ -227,13 +259,9 @@ public partial class MainWindow : Window
 
         // Clicar na taskbar põe a barra por cima do widget; re-afirmar o topmost
         // no instante da mudança de janela ativa (o timer sozinho deixava flicker)
-        _winEventProc = (_, _, _, _, _, _, _) => Dispatcher.BeginInvoke(UpdatePosition);
-        _winEventHook = Interop.SetWinEventHook(
-            Interop.EVENT_SYSTEM_FOREGROUND, Interop.EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, _winEventProc, 0, 0, Interop.WINEVENT_OUTOFCONTEXT);
+        EnsureForegroundHook();
         Closed += (_, _) =>
         {
-            if (_winEventHook != IntPtr.Zero) Interop.UnhookWinEvent(_winEventHook);
             if (_trayLocHook != IntPtr.Zero) Interop.UnhookWinEvent(_trayLocHook);
         };
 
@@ -276,6 +304,8 @@ public partial class MainWindow : Window
         BtnVolumeMenu.IsChecked = _settings.ShowVolume;
         ApplyScale();
         UpdateSizeChecks();
+        ApplyOpacity();
+        UpdateOpacityChecks();
     }
 
     private void OnSettingsChanged()
@@ -287,12 +317,28 @@ public partial class MainWindow : Window
 
     // ---------- Posicionamento na barra de tarefas ----------
 
+    private IntPtr _trayCache;
+    private DateTime _trayCacheAt;
+
+    /// <summary>Cache curta do handle da barra: enumerar e ordenar as barras
+    /// todas em CADA evento de posição (dezenas/s durante um deslize) era
+    /// trabalho repetido para rederivar um handle que quase nunca muda.</summary>
+    private IntPtr GetTargetTray()
+    {
+        if (_trayCache != IntPtr.Zero && Interop.IsWindow(_trayCache)
+            && (DateTime.UtcNow - _trayCacheAt).TotalSeconds < 2)
+            return _trayCache;
+        _trayCache = ResolveTargetTray();
+        _trayCacheAt = DateTime.UtcNow;
+        return _trayCache;
+    }
+
     /// <summary>Barra de tarefas desta janela (principal ou secundária). Se a
     /// barra alvo não existir (monitor desligado), UMA janela órfã — a de menor
     /// índice — recua para a barra principal, desde que nenhuma outra lá viva;
     /// as restantes escondem-se. Garante que a app nunca fica toda invisível
     /// (sem widget não há menu de contexto para recuperar).</summary>
-    private IntPtr GetTargetTray()
+    private IntPtr ResolveTargetTray()
     {
         if (TrayIndex > 0)
         {
@@ -359,12 +405,12 @@ public partial class MainWindow : Window
         IntPtr tray = GetTargetTray();
         if (tray == IntPtr.Zero || !Interop.GetWindowRect(tray, out var r))
         {
-            // Barra alvo indisponível (monitor desligado / Explorer a reiniciar)
-            if (Visibility != Visibility.Hidden)
-            {
-                Visibility = Visibility.Hidden;
-                VolumePopup.IsOpen = false;
-            }
+            // Barra alvo indisponível (monitor desligado / Explorer a reiniciar):
+            // esconder e limpar o estado de deslize — sem isto, a reaparição
+            // tocava uma animação de subida espúria
+            CancelRide();
+            _barWasHidden = false;
+            HideWidget();
             return;
         }
 
@@ -377,7 +423,7 @@ public partial class MainWindow : Window
         {
             Interop.SetWindowLongPtr(_hwnd, Interop.GWLP_HWNDPARENT, tray);
             _ownerTray = tray;
-            Interop.EnsureTopmost(_hwnd);
+            ReassertTopmost();
         }
 
         // Ocultação automática: o widget "cavalga" a barra — o hook de movimento
@@ -385,17 +431,22 @@ public partial class MainWindow : Window
         // ele desce e sobe colado à barra. Só se esconde quando ela assenta fora
         // do ecrã; âncoras ficam intactas (o X não muda num deslize vertical).
         int trayHeightPx = r.Bottom - r.Top;
-        int visiblePx = Interop.GetTaskbarVisiblePx(r, out int monitorBottomPx);
+        int visiblePx = Interop.GetTaskbarVisiblePx(r, out int monitorBottomPx, out int workAreaBottomPx);
 
         if (!Interop.GetWindowRect(_hwnd, out var w))
             return;
         int winWidth = w.Right - w.Left;
         int winHeight = w.Bottom - w.Top;
 
-        // Centrar na banda VISÍVEL inferior da barra (48 DIP no Win11): no
-        // 25H2 a janela da barra ficou mais alta do que a barra desenhada e a
-        // centragem no rect todo deixava o widget a flutuar acima (issue #9)
-        int barBandPx = Math.Min(trayHeightPx, (int)Math.Round(48 * Interop.GetDpiForWindow(tray) / 96.0));
+        // Centrar na banda DESENHADA da barra, não no rect da janela dela (no
+        // 25H2 o rect é mais alto e o widget flutuava — issue #9). A reserva de
+        // área de trabalho dá a altura real desenhada em qualquer barra
+        // (incluindo multi-linha); com ocultação automática não há reserva e
+        // vale a heurística dos 48 DIP do Win11.
+        int reservedPx = monitorBottomPx - workAreaBottomPx;
+        int barBandPx = reservedPx > 8
+            ? Math.Min(trayHeightPx, reservedPx)
+            : Math.Min(trayHeightPx, (int)Math.Round(48 * Interop.GetDpiForWindow(tray) / 96.0));
         // Onde o widget "estaria" com a barra assente fora do ecrã (mesmo offset
         // vertical dentro dela): ponto de partida da subida e destino da descida
         int belowEdgeTopPx = monitorBottomPx - 2 + (barBandPx - winHeight) / 2;
@@ -433,11 +484,7 @@ public partial class MainWindow : Window
                 return;
             }
             _barWasHidden = true;
-            if (Visibility != Visibility.Hidden)
-            {
-                Visibility = Visibility.Hidden;
-                VolumePopup.IsOpen = false;
-            }
+            HideWidget();
             return;
         }
 
@@ -459,7 +506,6 @@ public partial class MainWindow : Window
             _lastAnchorQuery = DateTime.MinValue;
             lock (_anchorLock)
             {
-                _widgetsMisses = 0;
                 _widgetsRightPx = null;
                 _startLeftPx = null;
                 _taskEndPx = null;
@@ -505,8 +551,7 @@ public partial class MainWindow : Window
                     _anchorsMissingSince = DateTime.UtcNow;
                 if (DateTime.UtcNow - _anchorsMissingSince < TimeSpan.FromSeconds(4))
                 {
-                    if (Visibility != Visibility.Hidden)
-                        Visibility = Visibility.Hidden;
+                    HideWidget();
                     return;
                 }
             }
@@ -543,11 +588,7 @@ public partial class MainWindow : Window
                 // Numa barra lotada nem a versão mínima cabe: esconder em vez
                 // de transbordar para cima do relógio/ícones (issue #10)
                 _barWasHidden = false;
-                if (Visibility != Visibility.Hidden)
-                {
-                    Visibility = Visibility.Hidden;
-                    VolumePopup.IsOpen = false;
-                }
+                HideWidget();
                 return;
             }
         }
@@ -560,18 +601,16 @@ public partial class MainWindow : Window
         if (hide)
         {
             _barWasHidden = false;
-            if (Visibility != Visibility.Hidden)
-            {
-                Visibility = Visibility.Hidden;
-                VolumePopup.IsOpen = false;
-            }
+            HideWidget();
             return;
         }
 
         // Revelação da barra: o Windows teleporta a janela dela para o destino
         // e anima só o visual — não há frames para seguir. Animamos nós a
         // subida, a emergir da borda do ecrã em sincronia com a barra.
-        if (_barWasHidden && !_dragging)
+        // (Só faz sentido com ocultação automática — sem ela, um rect
+        // transitório degenerado da barra armava uma subida espúria.)
+        if (_barWasHidden && !_dragging && Interop.IsAutoHideEnabled())
         {
             _barWasHidden = false;
             StartRide(leftPx, belowEdgeTopPx, topPx, down: false, winWidth, winHeight, monitorBottomPx);
@@ -588,13 +627,29 @@ public partial class MainWindow : Window
 
         if (Visibility != Visibility.Visible)
             Visibility = Visibility.Visible;
-        // Re-afirmar por cima de um tooltip/popup aberto empurra-o para trás
-        // da barra (a barra em ocultação automática também vive no topmost)
-        if (!_tooltipOpen && !VolumePopup.IsOpen)
-            Interop.EnsureTopmost(_hwnd);
+        ReassertTopmost();
     }
 
     private bool _tooltipOpen;
+
+    /// <summary>Esconde o widget e fecha SEMPRE o popup de volume — todos os
+    /// caminhos de esconder passam por aqui para não divergirem (havia um que
+    /// deixava o popup órfão a flutuar sobre a barra).</summary>
+    private void HideWidget()
+    {
+        VolumePopup.IsOpen = false;
+        if (Visibility != Visibility.Hidden)
+            Visibility = Visibility.Hidden;
+    }
+
+    /// <summary>Re-afirma o widget no topo, EXCETO com um tooltip/popup nosso
+    /// aberto — re-afirmar por cima deles empurra-os para trás da barra (que
+    /// em ocultação automática também vive na banda topmost).</summary>
+    private void ReassertTopmost()
+    {
+        if (!_tooltipOpen && !VolumePopup.IsOpen)
+            Interop.EnsureTopmost(_hwnd);
+    }
 
     // ---------- Animação de deslize (ocultação automática da barra) ----------
 
@@ -630,7 +685,7 @@ public partial class MainWindow : Window
         Interop.ClipWindowBottom(_hwnd, winWidth, winHeight, monitorBottomPx - startTopPx);
         if (Visibility != Visibility.Visible)
             Visibility = Visibility.Visible;
-        Interop.EnsureTopmost(_hwnd);
+        ReassertTopmost();
 
         _rideTimer?.Stop();
         _rideTimer = new DispatcherTimer(DispatcherPriority.Render)
@@ -737,26 +792,20 @@ public partial class MainWindow : Window
         {
             try
             {
-                var (widgetsRight, startLeft, taskButtonsRight) = TaskbarAnchors.Get(tray);
+                var (ok, widgetsRight, startLeft, taskButtonsRight) = TaskbarAnchors.Get(tray);
                 lock (_anchorLock)
                 {
-                    // Âncora do botão de widgets "pegajosa": as leituras de UIA
-                    // falham transitoriamente (shell ocupada, pós-reveal) e cair
-                    // logo para null punha o widget EM CIMA do botão do tempo.
-                    // Só aceitar o desaparecimento ao fim de 3 falhas seguidas
-                    // (~15s) — aí sim, foi mesmo desativado nas definições.
-                    if (widgetsRight.HasValue)
+                    // Leitura falhada (ou suspeita: nem o botão Iniciar veio,
+                    // e ele existe sempre) → manter TODAS as âncoras anteriores.
+                    // Falha transitória de UIA ≠ layout da barra mudou; era isto
+                    // que punha o widget em cima do botão do tempo e o fazia
+                    // piscar 4s no gate das âncoras.
+                    if (ok && (startLeft.HasValue || !_startLeftPx.HasValue))
                     {
-                        _widgetsRightPx = widgetsRight;
-                        _widgetsMisses = 0;
+                        _widgetsRightPx = widgetsRight; // null aqui = desativado mesmo
+                        _startLeftPx = startLeft;
+                        _taskEndPx = taskButtonsRight;
                     }
-                    else if (_widgetsRightPx.HasValue && ++_widgetsMisses >= 3)
-                    {
-                        _widgetsRightPx = null;
-                        _widgetsMisses = 0;
-                    }
-                    _startLeftPx = startLeft;
-                    _taskEndPx = taskButtonsRight;
                 }
             }
             finally
@@ -1141,12 +1190,18 @@ public partial class MainWindow : Window
             VolumePopup.IsOpen = false;
             return;
         }
+        if (_volLoading)
+            return; // já há uma abertura em curso — outra sobrescreveria o
+                    // ajuste do utilizador com o volume antigo ao completar
 
         CaptureForeground();
         _volLoading = true;
         double? current = await Task.Run(() => _uia.GetVolume()) ?? SpotifyVolume.GetVolume();
-        VolumeSlider.Value = (current ?? 1.0) * 100;
         _volLoading = false;
+        if (_closed || Visibility != Visibility.Visible)
+            return; // o widget escondeu-se durante a leitura: não abrir um
+                    // popup órfão a flutuar sobre a barra
+        VolumeSlider.Value = (current ?? 1.0) * 100;
         VolumePopup.IsOpen = true;
     }
 
@@ -1189,6 +1244,8 @@ public partial class MainWindow : Window
 
     private void VolumePopup_MouseLeave(object sender, MouseEventArgs e) => VolumePopup.IsOpen = false;
 
+    private int _wheelAccum;
+
     /// <summary>Roda do rato sobre o botão/popup de volume: fechado abre (com o
     /// volume atual carregado), aberto ajusta ±5 — como no próprio Spotify.</summary>
     private void Volume_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -1196,11 +1253,18 @@ public partial class MainWindow : Window
         e.Handled = true;
         if (!VolumePopup.IsOpen)
         {
-            Volume_Click(sender, null!);
+            Volume_Click(sender, null!); // o guard de _volLoading evita reentradas
             return;
         }
         if (_volLoading) return;
-        VolumeSlider.Value = Math.Clamp(VolumeSlider.Value + (e.Delta > 0 ? 5 : -5), 0, 100);
+        // Acumular o delta em vez de ±5 por EVENTO: touchpads de precisão
+        // mandam dezenas de eventos pequenos por gesto (o volume ia de 50 a 0
+        // num toque) e rodas rápidas juntam vários notches num evento só
+        _wheelAccum += e.Delta;
+        int steps = _wheelAccum / 120;
+        if (steps == 0) return;
+        _wheelAccum -= steps * 120;
+        VolumeSlider.Value = Math.Clamp(VolumeSlider.Value + 5 * steps, 0, 100);
     }
 
     // ---------- Tema (barra clara/escura) ----------
@@ -1259,7 +1323,9 @@ public partial class MainWindow : Window
     private void UpdateMarquee()
     {
         double clipWidth = TextStack.Width;
-        string key = $"{TitleText.Text}|{clipWidth:0}";
+        // O DPI entra na chave: a largura renderizada muda com a escala do
+        // monitor e a decisão de scroll ficava obsoleta ao mudar de ecrã
+        string key = $"{TitleText.Text}|{clipWidth:0}|{VisualTreeHelper.GetDpi(this).PixelsPerDip:0.##}";
         if (key == _marqueeKey) return;
         _marqueeKey = key;
 
@@ -1341,7 +1407,13 @@ public partial class MainWindow : Window
         UpdateProgressUi();
     }
 
-    private void VolumePopup_Closed(object sender, EventArgs e) => RestoreForeground();
+    private void VolumePopup_Closed(object sender, EventArgs e)
+    {
+        _volPopupWatchdog?.Stop();
+        RestoreForeground();
+    }
+
+    private DispatcherTimer? _volPopupWatchdog;
 
     // ---------- Preservação do foco ----------
     // O popup do volume e o menu de contexto ativam janelas próprias do WPF;
@@ -1354,6 +1426,9 @@ public partial class MainWindow : Window
     {
         CaptureForeground();
         RebuildMonitorMenu();
+        // Estado global — outra janela (ou o Gestor de Tarefas) pode tê-lo mudado
+        if (!PackagedApp.IsPackaged)
+            AutoStartMenu.IsChecked = IsAutoStartEnabled();
     }
 
     /// <summary>Um item POR CADA barra de tarefas existente, com seleção
@@ -1522,6 +1597,27 @@ public partial class MainWindow : Window
         SizeSmall.IsChecked = Math.Abs(_settings.Scale - 0.8) < 0.01;
         SizeNormal.IsChecked = Math.Abs(_settings.Scale - 1.0) < 0.01;
         SizeLarge.IsChecked = _settings.Scale > 1.05;
+    }
+
+    /// <summary>Brilho/opacidade do widget — pedido de utilizadores OLED que
+    /// escurecem a barra: um widget a brilho total destoa e marca o painel.</summary>
+    private void Opacity_Click(object sender, RoutedEventArgs e)
+    {
+        var item = (MenuItem)sender;
+        _settings.Opacity = double.Parse((string)item.Tag, CultureInfo.InvariantCulture);
+        _settings.Save();
+        ApplyOpacity();
+        UpdateOpacityChecks();
+    }
+
+    private void ApplyOpacity() => Root.Opacity = _settings.Opacity;
+
+    private void UpdateOpacityChecks()
+    {
+        Opacity100.IsChecked = _settings.Opacity > 0.95;
+        Opacity85.IsChecked = Math.Abs(_settings.Opacity - 0.85) < 0.05;
+        Opacity70.IsChecked = Math.Abs(_settings.Opacity - 0.7) < 0.05;
+        Opacity55.IsChecked = _settings.Opacity < 0.6;
     }
 
     private void Launcher_Click(object sender, RoutedEventArgs e)

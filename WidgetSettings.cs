@@ -19,6 +19,10 @@ public class WidgetSettings
     /// <summary>Escala do widget (0.8 = pequeno, 1.0 = normal, 1.1 = grande).</summary>
     public double Scale { get; set; } = 1.0;
 
+    /// <summary>Brilho/opacidade do widget (1.0 = total; valores mais baixos
+    /// para barras escurecidas em monitores OLED).</summary>
+    public double Opacity { get; set; } = 1.0;
+
     /// <summary>Compatibilidade com versões antigas — hoje vale <see cref="Monitors"/>.</summary>
     public int MonitorIndex { get; set; } = 0;
 

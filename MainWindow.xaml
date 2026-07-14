@@ -234,6 +234,12 @@
                     <MenuItem x:Name="SizeNormal" Header="Normal" IsCheckable="True" Click="Size_Click" Tag="1.0"/>
                     <MenuItem x:Name="SizeLarge" Header="Grande" IsCheckable="True" Click="Size_Click" Tag="1.1"/>
                 </MenuItem>
+                <MenuItem x:Name="OpacityMenuItem" Header="Brilho">
+                    <MenuItem x:Name="Opacity100" Header="100%" IsCheckable="True" Click="Opacity_Click" Tag="1.0"/>
+                    <MenuItem x:Name="Opacity85" Header="85%" IsCheckable="True" Click="Opacity_Click" Tag="0.85"/>
+                    <MenuItem x:Name="Opacity70" Header="70%" IsCheckable="True" Click="Opacity_Click" Tag="0.7"/>
+                    <MenuItem x:Name="Opacity55" Header="55%" IsCheckable="True" Click="Opacity_Click" Tag="0.55"/>
+                </MenuItem>
                 <MenuItem x:Name="ButtonsMenuItem" Header="Botões">
                     <MenuItem x:Name="BtnLikeMenu" Header="Adicionar aos favoritos (+)" IsCheckable="True" Click="Buttons_Click"/>
                     <MenuItem x:Name="BtnShuffleMenu" Header="Modo aleatório" IsCheckable="True" Click="Buttons_Click"/>
@@ -388,7 +394,7 @@
             <Popup x:Name="VolumePopup" PlacementTarget="{Binding ElementName=VolumeButton}"
                    Placement="Top" AllowsTransparency="True" PopupAnimation="Fade" StaysOpen="True"
                    Closed="VolumePopup_Closed">
-                <Border Background="#282828" CornerRadius="6" Padding="12,10" Margin="6"
+                <Border x:Name="VolumePopupBorder" Background="#282828" CornerRadius="6" Padding="12,10" Margin="6"
                         MouseLeave="VolumePopup_MouseLeave" MouseWheel="Volume_MouseWheel">
                     <StackPanel Orientation="Horizontal">
                         <Path Width="13" Height="13" Stretch="Uniform" Fill="#B3B3B3"
