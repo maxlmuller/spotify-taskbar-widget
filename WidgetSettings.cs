@@ -36,6 +36,9 @@ public class WidgetSettings
     /// <summary>Barra de progresso da música no fundo do widget (clique para saltar).</summary>
     public bool ShowProgress { get; set; } = true;
 
+    /// <summary>Fazer scroll de títulos compridos apenas uma vez no início da música.</summary>
+    public bool ScrollTitleOnce { get; set; } = false;
+
     // Botões visíveis (em ecrãs pequenos, os menos importantes escondem-se sozinhos)
     public bool ShowPrev { get; set; } = true;
     public bool ShowNext { get; set; } = true;

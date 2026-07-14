@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -321,6 +321,7 @@ public partial class MainWindow : Window
     {
         LauncherMenu.IsChecked = _settings.ShowLauncher;
         ProgressMenu.IsChecked = _settings.ShowProgress;
+        ScrollTitleOnceMenu.IsChecked = _settings.ScrollTitleOnce;
         BtnLikeMenu.IsChecked = _settings.ShowLike;
         BtnShuffleMenu.IsChecked = _settings.ShowShuffle;
         BtnPrevMenu.IsChecked = _settings.ShowPrev;
@@ -1457,7 +1458,11 @@ public partial class MainWindow : Window
         if (overflow > 4)
         {
             double scrollSeconds = Math.Max(1.5, overflow / 25.0);
-            var anim = new DoubleAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
+            var anim = new DoubleAnimationUsingKeyFrames();
+            if (!_settings.ScrollTitleOnce)
+                anim.RepeatBehavior = RepeatBehavior.Forever;
+            else
+                anim.FillBehavior = FillBehavior.Stop;
             double t = 2.5; // pausa inicial
             anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
             anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(t))));
@@ -1518,6 +1523,14 @@ public partial class MainWindow : Window
         _settings.ShowProgress = ProgressMenu.IsChecked;
         _settings.Save();
         UpdateProgressUi();
+    }
+
+    private void ScrollTitleOnce_MenuClick(object sender, RoutedEventArgs e)
+    {
+        _settings.ScrollTitleOnce = ScrollTitleOnceMenu.IsChecked;
+        _settings.Save();
+        _marqueeKey = ""; // força novo cálculo
+        UpdateMarquee();
     }
 
     private void VolumePopup_Closed(object sender, EventArgs e)
