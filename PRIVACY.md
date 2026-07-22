@@ -19,7 +19,7 @@ any kind.
   ko-fi.com; any interaction there is governed by Ko-fi's own privacy policy.
 
 This is an independent open-source project, not affiliated with Spotify AB.
-Source code: https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+Source code: https://github.com/maxlmuller/spotify-taskbar-widget
 
 Contact: open an issue at
-https://github.com/mechanicwb2-hub/spotify-taskbar-widget/issues
+https://github.com/maxlmuller/spotify-taskbar-widget/issues

@@ -31,7 +31,7 @@ public class WidgetSettings
     public List<int> Monitors { get; set; } = new();
 
     /// <summary>Com o Spotify fechado: true mostra um botão "Abrir Spotify"; false esconde o widget.</summary>
-    public bool ShowLauncher { get; set; } = false;
+    public bool ShowLauncher { get; set; } = true;
 
     /// <summary>Barra de progresso da música no fundo do widget (clique para saltar).</summary>
     public bool ShowProgress { get; set; } = true;
@@ -46,9 +46,10 @@ public class WidgetSettings
     public bool ShowShuffle { get; set; } = true;
     public bool ShowRepeat { get; set; } = true;
     public bool ShowVolume { get; set; } = true;
-    public bool ShowLyrics { get; set; } = false;
-    public int LyricsStyle { get; set; } = 0; // 0 = Padrão, 1 = Rolagem
-    public bool LyricsActive { get; set; } = false;
+    public bool ShowLyrics { get; set; } = true;
+    public int LyricsStyle { get; set; } = 1; // 0 = Padrão, 1 = Rolagem
+    public int LyricsAlignment { get; set; } = 1; // 0 = Esquerda, 1 = Centro
+    public bool LyricsActive { get; set; } = true;
 
     private static readonly object SaveLock = new();
 

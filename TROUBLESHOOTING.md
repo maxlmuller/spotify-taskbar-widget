@@ -18,7 +18,7 @@ session** — the same system behind the Windows volume popup. If it's empty:
 
 ## Antivirus / VirusTotal flags the installer
 
-See [issue #4](https://github.com/mechanicwb2-hub/spotify-taskbar-widget/issues/4):
+See [issue #4](https://github.com/maxlmuller/spotify-taskbar-widget/issues/4):
 a couple of minor engines heuristically flag unsigned single-file .NET
 installers. All major engines report clean, the source is public, and you can
 install the Microsoft-signed build from the
@@ -35,7 +35,7 @@ that build is signed and certified by Microsoft.
 - Right-click → **Reset to automatic position** (also resets the monitor choice).
 - To place it manually: right-click → **Move widget**, drag, untick to lock.
 - Found a layout the auto-positioning handles badly? Please
-  [open an issue](https://github.com/mechanicwb2-hub/spotify-taskbar-widget/issues)
+  [open an issue](https://github.com/maxlmuller/spotify-taskbar-widget/issues)
   with a screenshot of your full taskbar — that's how the tricky setups get fixed.
 
 ## Favorites / Smart Shuffle / repeat state not showing

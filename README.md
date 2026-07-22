@@ -16,7 +16,7 @@ a seekable progress bar.
   [**Taskbar Widget for Spotify**](https://apps.microsoft.com/detail/9P12TLJZG2CJ) —
   one-click install, automatic updates, and works with Smart App Control enabled.
 - **Direct download:** grab **`SpotifyTaskbarWidget-Setup.exe`** from the
-  [latest release](https://github.com/mechanicwb2-hub/spotify-taskbar-widget/releases/latest)
+  [latest release](https://github.com/maxlmuller/spotify-taskbar-widget/releases/latest)
   and run it — per-user install (no admin rights), installs the .NET 8 Desktop
   Runtime automatically if missing, and self-updates from GitHub Releases.
 - **winget** (pending review): `winget install MechanicWB.TaskbarWidgetForSpotify`
@@ -94,7 +94,7 @@ play/pause, track info and art keep working — and the heuristics in
 Something not working? See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** —
 covers "nothing playing", antivirus flags, Smart App Control, positioning
 and more. Still stuck?
-[Open an issue](https://github.com/mechanicwb2-hub/spotify-taskbar-widget/issues).
+[Open an issue](https://github.com/maxlmuller/spotify-taskbar-widget/issues).
 
 ## Support
 

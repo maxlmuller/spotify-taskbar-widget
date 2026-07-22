@@ -187,10 +187,13 @@ public partial class MainWindow : Window
         LyricsStyleMenu.Header = L.LyricsStyle;
         LyricsStyleDefault.Header = L.LyricsStyle1Line;
         LyricsStyleScroll.Header = L.LyricsStyle2Lines;
+        LyricsAlignLeft.Header = L.LyricsAlignLeft;
+        LyricsAlignCenter.Header = L.LyricsAlignCenter;
         LauncherMenu.Header = L.ShowLauncher;
         LauncherMenu.ToolTip = L.ShowLauncherTip;
         AutoStartMenu.Header = L.AutoStart;
         OpenSpotifyMenu.Header = L.OpenSpotify;
+        UpdateMenu.Header = L.CheckUpdates;
         ExitMenu.Header = L.Exit;
 
         PrevButton.ToolTip = L.TipPrev;
@@ -202,7 +205,6 @@ public partial class MainWindow : Window
         LikeButton.ToolTip = L.TipLikeAdd;
         LyricsToggleButton.ToolTip = L.TipLyrics;
         LauncherPanel.ToolTip = L.TipOpenSpotify;
-        LauncherText.Text = L.OpenSpotify;
         ArtistText.Text = L.NothingPlaying;
     }
 
@@ -314,6 +316,7 @@ public partial class MainWindow : Window
         if (_closed)
             return; // fechada durante o await (sync de monitores / restart do Explorer)
         await RefreshTrackAsync();
+        _ = CheckUpdatesQuietlyAsync();
     }
 
     /// <summary>Estado da UI que espelha as definições partilhadas (menus,
@@ -331,6 +334,8 @@ public partial class MainWindow : Window
         LyricsMenu.IsChecked = _settings.ShowLyrics;
         LyricsStyleDefault.IsChecked = _settings.LyricsStyle == 0;
         LyricsStyleScroll.IsChecked = _settings.LyricsStyle == 1;
+        LyricsAlignLeft.IsChecked = _settings.LyricsAlignment == 0;
+        LyricsAlignCenter.IsChecked = _settings.LyricsAlignment == 1;
 
         LyricsToggleButton.Visibility = _settings.ShowLyrics ? Visibility.Visible : Visibility.Collapsed;
 
@@ -583,7 +588,7 @@ public partial class MainWindow : Window
         int topPx = r.Bottom - barBandPx + (barBandPx - winHeight) / 2;
 
         bool rightAnchored = false;
-        int rightAnchorLeftLimitPx = r.Left + 12;
+        int rightAnchorLeftLimitPx = r.Left + 4;
         int leftPx, rightLimitPx;
         if (_settings.ManualX.TryGetValue(TrayIndex, out double manualX))
         {
@@ -615,7 +620,7 @@ public partial class MainWindow : Window
                     HideWidget();
                     return;
                 }
-                leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 12;
+                leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 4;
                 rightLimitPx = r.Right - 4;
             }
             else
@@ -624,7 +629,7 @@ public partial class MainWindow : Window
                 // Ícones centrados (em qualquer barra/monitor): o espaço livre
                 // está à esquerda — alinhar a seguir ao botão de widgets/tempo;
                 // sem ele, à borda esquerda. Nunca invadir o botão Iniciar.
-                leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 12;
+                leftPx = widgetsRightPx.HasValue ? (int)widgetsRightPx.Value + 8 : r.Left + 4;
                 rightLimitPx = (int)startLeftPx.Value - 8;
             }
         }
@@ -1429,7 +1434,6 @@ public partial class MainWindow : Window
 
         TitleText.Foreground = light ? Brushes.Black : Brushes.White;
         ArtistText.Foreground = Subdued;
-        LauncherText.Foreground = Subdued;
         PrevIcon.Fill = Subdued;
         NextIcon.Fill = Subdued;
         VolumeIcon.Fill = Subdued;
@@ -1479,10 +1483,7 @@ public partial class MainWindow : Window
         {
             double scrollSeconds = Math.Max(1.5, overflow / 25.0);
             var anim = new DoubleAnimationUsingKeyFrames();
-            if (!_settings.ScrollTitleOnce)
-                anim.RepeatBehavior = RepeatBehavior.Forever;
-            else
-                anim.FillBehavior = FillBehavior.Stop;
+            anim.FillBehavior = FillBehavior.Stop;
             double t = 2.5; // pausa inicial
             anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
             anim.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(t))));
@@ -1617,17 +1618,6 @@ public partial class MainWindow : Window
                 SyncToMonitors();
             };
             MonitorMenu.Items.Add(item);
-        }
-        if (count == 0)
-        {
-            // Sem barras secundárias o Windows não tem onde ancorar o widget
-            // noutro ecrã — explicar como ativar em vez de esconder o menu
-            // (utilizadores achavam que a funcionalidade não existia, issue #11)
-            MonitorMenu.Items.Add(new MenuItem
-            {
-                Header = L.MonitorHint,
-                IsEnabled = false,
-            });
         }
     }
 
@@ -1882,6 +1872,12 @@ public partial class MainWindow : Window
             else break;
         }
 
+        bool isError = _currentLyrics.Count == 1 && _currentLyrics[0].Time == TimeSpan.Zero && _currentLyrics[0].Text.StartsWith("[");
+        if (isError && currentPos.TotalSeconds > 2)
+        {
+            newIndex = -2;
+        }
+
         if (newIndex == -1)
         {
             if (_currentLyricIndex != -1 || LyricsText.Text != "♪")
@@ -1899,7 +1895,15 @@ public partial class MainWindow : Window
 
         if (newIndex != _currentLyricIndex)
         {
-            bool animate = _settings.LyricsStyle == 1 && newIndex == _currentLyricIndex + 1 && _currentLyricIndex != -1;
+            if (newIndex == -2)
+            {
+                _currentLyricIndex = newIndex;
+                var opAnim = new System.Windows.Media.Animation.DoubleAnimation(1.0, 0.0, TimeSpan.FromSeconds(0.5));
+                LyricsText.BeginAnimation(UIElement.OpacityProperty, opAnim);
+                return;
+            }
+
+            bool animate = _settings.LyricsStyle == 1 && newIndex == _currentLyricIndex + 1 && _currentLyricIndex != -1 && _currentLyricIndex != -2;
             _currentLyricIndex = newIndex;
             
             string currentLine = newIndex >= 0 && !string.IsNullOrWhiteSpace(_currentLyrics[newIndex].Text) 
@@ -1920,11 +1924,13 @@ public partial class MainWindow : Window
 
             if (_settings.LyricsStyle == 1)
             {
+                var align = _settings.LyricsAlignment == 0 ? TextAlignment.Left : TextAlignment.Center;
+                var hAlign = _settings.LyricsAlignment == 0 ? HorizontalAlignment.Left : HorizontalAlignment.Center;
                 LyricsScrollPanel.VerticalAlignment = VerticalAlignment.Top;
-                LyricsText.TextAlignment = TextAlignment.Center;
-                LyricsText.HorizontalAlignment = HorizontalAlignment.Center;
-                LyricsTextNext.TextAlignment = TextAlignment.Center;
-                LyricsTextNext.HorizontalAlignment = HorizontalAlignment.Center;
+                LyricsText.TextAlignment = align;
+                LyricsText.HorizontalAlignment = hAlign;
+                LyricsTextNext.TextAlignment = align;
+                LyricsTextNext.HorizontalAlignment = hAlign;
                 
                 LyricsTextNext.Visibility = string.IsNullOrEmpty(nextLine) ? Visibility.Collapsed : Visibility.Visible;
                 
@@ -1960,9 +1966,11 @@ public partial class MainWindow : Window
             }
             else
             {
+                var align = _settings.LyricsAlignment == 0 ? TextAlignment.Left : TextAlignment.Center;
+                var hAlign = _settings.LyricsAlignment == 0 ? HorizontalAlignment.Left : HorizontalAlignment.Center;
                 LyricsScrollPanel.VerticalAlignment = VerticalAlignment.Center;
-                LyricsText.TextAlignment = TextAlignment.Left;
-                LyricsText.HorizontalAlignment = HorizontalAlignment.Left;
+                LyricsText.TextAlignment = align;
+                LyricsText.HorizontalAlignment = hAlign;
                 
                 LyricsText.Text = currentLine;
                 LyricsTextNext.Visibility = Visibility.Collapsed;
@@ -1982,7 +1990,16 @@ public partial class MainWindow : Window
         _settings.ShowNext = BtnNextMenu.IsChecked;
         _settings.ShowRepeat = BtnRepeatMenu.IsChecked;
         _settings.ShowVolume = BtnVolumeMenu.IsChecked;
+
+        bool oldShowLyrics = _settings.ShowLyrics;
         _settings.ShowLyrics = LyricsMenu.IsChecked;
+        
+        if (!oldShowLyrics && _settings.ShowLyrics)
+        {
+            _settings.LyricsActive = true;
+            ApplyLyricsVisibility();
+        }
+
         _settings.Save();
         UpdatePosition();
     }
@@ -1993,6 +2010,10 @@ public partial class MainWindow : Window
             _settings.LyricsStyle = 0;
         else if (sender == LyricsStyleScroll)
             _settings.LyricsStyle = 1;
+        else if (sender == LyricsAlignLeft)
+            _settings.LyricsAlignment = 0;
+        else if (sender == LyricsAlignCenter)
+            _settings.LyricsAlignment = 1;
 
         _settings.Save();
         _currentLyricIndex = -1;
@@ -2059,8 +2080,57 @@ public partial class MainWindow : Window
 
     private void OpenSpotify_Click(object sender, RoutedEventArgs e) => SpotifyActions.OpenSpotifyWindow();
 
+    private async void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (!UpdateService.IsConfigured)
+        {
+            MessageBox.Show(
+                $"Versão atual: v{UpdateService.CurrentVersion}\n\nAs atualizações automáticas ainda não estão configuradas (falta definir o repositório GitHub em UpdateService.cs).",
+                "Spotify Taskbar Widget");
+            return;
+        }
 
+        UpdateMenu.IsEnabled = false;
+        try
+        {
+            var update = await UpdateService.CheckAsync();
+            if (update == null)
+            {
+                MessageBox.Show($"Estás na versão mais recente (v{UpdateService.CurrentVersion}).",
+                    "Spotify Taskbar Widget");
+                return;
+            }
 
+            var answer = MessageBox.Show(
+                $"Nova versão v{update.Value.Version} disponível (atual: v{UpdateService.CurrentVersion}).\n\nAtualizar agora? O widget reinicia sozinho.",
+                "Spotify Taskbar Widget", MessageBoxButton.YesNo);
+            if (answer == MessageBoxResult.Yes)
+                await UpdateService.DownloadAndApplyAsync(update.Value.Url);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Não foi possível verificar atualizações: " + ex.Message,
+                "Spotify Taskbar Widget");
+        }
+        finally
+        {
+            UpdateMenu.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Verificação silenciosa ao arrancar: se houver update, realça o item do menu.</summary>
+    private async Task CheckUpdatesQuietlyAsync()
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(20));
+            var update = await UpdateService.CheckAsync();
+            if (update != null)
+                await Dispatcher.InvokeAsync(() =>
+                    UpdateMenu.Header = $"⬤ Atualizar para v{update.Value.Version}");
+        }
+        catch { }
+    }
     private void Exit_Click(object sender, RoutedEventArgs e)
     {
         App.IntentionalExit = true;

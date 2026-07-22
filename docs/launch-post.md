@@ -41,7 +41,7 @@ I always hated that the Windows 11 taskbar has all that dead space next to the w
 
 **Free and open source (MIT):**
 - Microsoft Store: https://apps.microsoft.com/detail/9P12TLJZG2CJ
-- GitHub (source + installer): https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+- GitHub (source + installer): https://github.com/maxlmuller/spotify-taskbar-widget
 
 The Store version installs in one click and updates automatically. winget support is pending review.
 
@@ -73,7 +73,7 @@ Sempre me irritou a barra de tarefas do Windows 11 ter aquele espaço morto ao l
 
 **Grátis e open source (MIT):**
 - Microsoft Store: https://apps.microsoft.com/detail/9P12TLJZG2CJ
-- GitHub (código + instalador): https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+- GitHub (código + instalador): https://github.com/maxlmuller/spotify-taskbar-widget
 
 A versão da Store instala-se num clique e atualiza-se sozinha.
 
@@ -90,7 +90,7 @@ Windows 11 taskbar + Spotify, the way it should've always been:
 Free & open source. No login needed.
 
 🛒 Microsoft Store: https://apps.microsoft.com/detail/9P12TLJZG2CJ
-⬇️ GitHub: https://github.com/mechanicwb2-hub/spotify-taskbar-widget
+⬇️ GitHub: https://github.com/maxlmuller/spotify-taskbar-widget
 
 *(anexar: docs/demo.gif)*
 

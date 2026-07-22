@@ -14,9 +14,9 @@ Upload do ficheiro: `Packaging\out\SpotifyTaskbarWidget.msix`
 ## 3. Properties
 - **Categoria:** Music
 - **Privacy policy URL:**
-  `https://github.com/mechanicwb2-hub/spotify-taskbar-widget/blob/main/PRIVACY.md`
-- **Website:** `https://github.com/mechanicwb2-hub/spotify-taskbar-widget`
-- **Support contact:** `https://github.com/mechanicwb2-hub/spotify-taskbar-widget/issues`
+  `https://github.com/maxlmuller/spotify-taskbar-widget/blob/main/PRIVACY.md`
+- **Website:** `https://github.com/maxlmuller/spotify-taskbar-widget`
+- **Support contact:** `https://github.com/maxlmuller/spotify-taskbar-widget/issues`
 - "Does this product access, collect or transmit personal information?" → **No**
 
 ## 4. Age ratings (questionário IARC)

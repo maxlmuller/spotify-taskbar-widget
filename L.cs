@@ -18,7 +18,7 @@ internal static class L
     public static string MoveWidgetTip => Pt
         ? "Arrasta o widget para onde quiseres; desmarca para bloquear nessa posição"
         : "Drag the widget wherever you want; untick to lock it in place";
-    public static string ResetAutoPos => Pt ? "Repor posição automática" : "Reset to automatic position";
+    public static string ResetAutoPos => Pt ? "Redefinir posição" : "Reset position";
     public static string MonitorMenu => Pt ? "Monitor" : "Monitor";
     public static string MonitorPrimary => Pt ? "Principal" : "Primary";
     public static string MonitorN(int n) => Pt ? $"Monitor {n}" : $"Monitor {n}";
@@ -43,9 +43,11 @@ internal static class L
         ? "Com o Spotify fechado, mostra um botão para o abrir em vez de esconder o widget"
         : "When Spotify is closed, show a button to open it instead of hiding the widget";
     public static string BtnLyrics => Pt ? "Letras" : "Lyrics";
-    public static string LyricsStyle => Pt ? "Estilo Letra" : "Lyrics Style";
+    public static string LyricsStyle => Pt ? "Estilo das letras" : "Lyrics Style";
     public static string LyricsStyle1Line => Pt ? "1 Linha" : "1 Line";
     public static string LyricsStyle2Lines => Pt ? "2 Linhas" : "2 Lines";
+    public static string LyricsAlignLeft => Pt ? "Alinhado à esquerda" : "Left Aligned";
+    public static string LyricsAlignCenter => Pt ? "Centralizado" : "Centered";
     public static string AutoStart => Pt ? "Iniciar com o Windows" : "Start with Windows";
     public static string OpenSpotify => Pt ? "Abrir Spotify" : "Open Spotify";
     public static string CheckUpdates => Pt ? "Procurar atualizações" : "Check for updates";
