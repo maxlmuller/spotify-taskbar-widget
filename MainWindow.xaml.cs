@@ -1850,7 +1850,7 @@ public partial class MainWindow : Window
         if (!_spotifyPresent || string.IsNullOrWhiteSpace(_currentTrackName))
         {
             LyricsText.Text = L.NothingPlaying;
-            LyricsTextNext.Visibility = Visibility.Collapsed;
+            LyricsViewboxNext.Visibility = Visibility.Collapsed;
             _currentLyricIndex = -1;
             return;
         }
@@ -1858,7 +1858,7 @@ public partial class MainWindow : Window
         if (_currentLyrics == null || _currentLyrics.Count == 0)
         {
             LyricsText.Text = "";
-            LyricsTextNext.Visibility = Visibility.Collapsed;
+            LyricsViewboxNext.Visibility = Visibility.Collapsed;
             _currentLyricIndex = -1;
             return;
         }
@@ -1883,7 +1883,7 @@ public partial class MainWindow : Window
             if (_currentLyricIndex != -1 || LyricsText.Text != "♪")
             {
                 LyricsText.Text = "♪";
-                LyricsTextNext.Visibility = Visibility.Collapsed;
+                LyricsViewboxNext.Visibility = Visibility.Collapsed;
                 LyricsScrollTransform.BeginAnimation(TranslateTransform.YProperty, null);
                 LyricsScrollTransform.Y = 0;
                 LyricsText.BeginAnimation(UIElement.OpacityProperty, null);
@@ -1928,11 +1928,11 @@ public partial class MainWindow : Window
                 var hAlign = _settings.LyricsAlignment == 0 ? HorizontalAlignment.Left : HorizontalAlignment.Center;
                 LyricsScrollPanel.VerticalAlignment = VerticalAlignment.Top;
                 LyricsText.TextAlignment = align;
-                LyricsText.HorizontalAlignment = hAlign;
+                LyricsViewbox.HorizontalAlignment = hAlign;
                 LyricsTextNext.TextAlignment = align;
-                LyricsTextNext.HorizontalAlignment = hAlign;
+                LyricsViewboxNext.HorizontalAlignment = hAlign;
                 
-                LyricsTextNext.Visibility = string.IsNullOrEmpty(nextLine) ? Visibility.Collapsed : Visibility.Visible;
+                LyricsViewboxNext.Visibility = string.IsNullOrEmpty(nextLine) ? Visibility.Collapsed : Visibility.Visible;
                 
                 if (animate)
                 {
@@ -1970,10 +1970,10 @@ public partial class MainWindow : Window
                 var hAlign = _settings.LyricsAlignment == 0 ? HorizontalAlignment.Left : HorizontalAlignment.Center;
                 LyricsScrollPanel.VerticalAlignment = VerticalAlignment.Center;
                 LyricsText.TextAlignment = align;
-                LyricsText.HorizontalAlignment = hAlign;
+                LyricsViewbox.HorizontalAlignment = hAlign;
                 
                 LyricsText.Text = currentLine;
-                LyricsTextNext.Visibility = Visibility.Collapsed;
+                LyricsViewboxNext.Visibility = Visibility.Collapsed;
                 LyricsScrollTransform.BeginAnimation(TranslateTransform.YProperty, null);
                 LyricsScrollTransform.Y = 0;
                 LyricsText.BeginAnimation(UIElement.OpacityProperty, null);
@@ -2084,9 +2084,7 @@ public partial class MainWindow : Window
     {
         if (!UpdateService.IsConfigured)
         {
-            MessageBox.Show(
-                $"Versão atual: v{UpdateService.CurrentVersion}\n\nAs atualizações automáticas ainda não estão configuradas (falta definir o repositório GitHub em UpdateService.cs).",
-                "Spotify Taskbar Widget");
+            MessageBox.Show(L.UpdateNotConfigured(UpdateService.CurrentVersion), L.AppTitle);
             return;
         }
 
@@ -2096,21 +2094,19 @@ public partial class MainWindow : Window
             var update = await UpdateService.CheckAsync();
             if (update == null)
             {
-                MessageBox.Show($"Estás na versão mais recente (v{UpdateService.CurrentVersion}).",
-                    "Spotify Taskbar Widget");
+                MessageBox.Show(L.UpdateLatest(UpdateService.CurrentVersion), L.AppTitle);
                 return;
             }
 
             var answer = MessageBox.Show(
-                $"Nova versão v{update.Value.Version} disponível (atual: v{UpdateService.CurrentVersion}).\n\nAtualizar agora? O widget reinicia sozinho.",
-                "Spotify Taskbar Widget", MessageBoxButton.YesNo);
+                L.UpdatePrompt(update.Value.Version, UpdateService.CurrentVersion),
+                L.AppTitle, MessageBoxButton.YesNo);
             if (answer == MessageBoxResult.Yes)
                 await UpdateService.DownloadAndApplyAsync(update.Value.Url);
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Não foi possível verificar atualizações: " + ex.Message,
-                "Spotify Taskbar Widget");
+            MessageBox.Show(L.UpdateError(ex.Message), L.AppTitle);
         }
         finally
         {
@@ -2127,7 +2123,7 @@ public partial class MainWindow : Window
             var update = await UpdateService.CheckAsync();
             if (update != null)
                 await Dispatcher.InvokeAsync(() =>
-                    UpdateMenu.Header = $"⬤ Atualizar para v{update.Value.Version}");
+                    UpdateMenu.Header = L.UpdateAvailable(update.Value.Version));
         }
         catch { }
     }

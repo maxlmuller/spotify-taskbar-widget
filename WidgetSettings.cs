@@ -48,7 +48,7 @@ public class WidgetSettings
     public bool ShowVolume { get; set; } = true;
     public bool ShowLyrics { get; set; } = true;
     public int LyricsStyle { get; set; } = 1; // 0 = Padrão, 1 = Rolagem
-    public int LyricsAlignment { get; set; } = 1; // 0 = Esquerda, 1 = Centro
+    public int LyricsAlignment { get; set; } = 0; // 0 = Esquerda, 1 = Centro
     public bool LyricsActive { get; set; } = true;
 
     private static readonly object SaveLock = new();

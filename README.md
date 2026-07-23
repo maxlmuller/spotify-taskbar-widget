@@ -99,7 +99,7 @@ and more. Still stuck?
 ## Support
 
 The widget is free and open source. If you find it useful, you can support
-development on **[Ko-fi](https://ko-fi.com/mechanicwb2)** ☕
+development on **[Ko-fi](https://ko-fi.com/maxlmuller)** ☕
 
 ## Building
 

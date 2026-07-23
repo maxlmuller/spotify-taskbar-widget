@@ -432,8 +432,12 @@
                         <StackPanel.RenderTransform>
                             <TranslateTransform x:Name="LyricsScrollTransform" Y="0"/>
                         </StackPanel.RenderTransform>
-                        <TextBlock x:Name="LyricsText" Text="" FontFamily="./Fonts/#Google Sans Flex" Foreground="White" FontWeight="SemiBold" FontSize="15" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" HorizontalAlignment="Center"/>
-                        <TextBlock x:Name="LyricsTextNext" Text="" FontFamily="./Fonts/#Google Sans Flex" Foreground="#88FFFFFF" FontWeight="SemiBold" FontSize="15" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed"/>
+                        <Viewbox x:Name="LyricsViewbox" StretchDirection="DownOnly" HorizontalAlignment="Center">
+                            <TextBlock x:Name="LyricsText" Text="" FontFamily="./Fonts/#Google Sans Flex" Foreground="White" FontWeight="SemiBold" FontSize="15" TextWrapping="NoWrap" TextAlignment="Center"/>
+                        </Viewbox>
+                        <Viewbox x:Name="LyricsViewboxNext" StretchDirection="DownOnly" HorizontalAlignment="Center" Visibility="Collapsed">
+                            <TextBlock x:Name="LyricsTextNext" Text="" FontFamily="./Fonts/#Google Sans Flex" Foreground="#88FFFFFF" FontWeight="SemiBold" FontSize="15" TextWrapping="NoWrap" TextAlignment="Center"/>
+                        </Viewbox>
                     </StackPanel>
                 </Grid>
             </StackPanel>

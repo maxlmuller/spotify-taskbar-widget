@@ -83,4 +83,12 @@ internal static class L
     public static string UpdateError(string message) => Pt
         ? "Não foi possível verificar atualizações: " + message
         : "Could not check for updates: " + message;
+
+    // Letras
+    public static string LyricsNotFound => Pt ? "[Letra não encontrada]" : "[Lyrics not found]";
+    public static string LyricsTooManyRequests => Pt ? "[Muitos pedidos. Limite atingido (429)]" : "[Too many requests. Limit reached (429)]";
+    public static string LyricsServerError(int code) => Pt ? $"[Servidor indisponível: {code}]" : $"[Server unavailable: {code}]";
+    public static string LyricsNetworkError => Pt ? "[Servidor indisponível. Tente novamente.]" : "[Server unavailable. Try again later.]";
+    public static string LyricsNoSync => Pt ? "[Sem letras sincronizadas]" : "[No synced lyrics]";
+    public static string LyricsParseError => Pt ? "[Erro ao processar as letras]" : "[Error processing lyrics]";
 }

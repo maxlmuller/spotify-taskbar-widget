@@ -29,7 +29,9 @@ public class LyricsService
     
     static LyricsService()
     {
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd("SpotifyTaskbarWidget/1.2.9 (https://github.com/mechanicwb2/spotify-taskbar-widget)");
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        string vStr = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "1.3.2";
+        Http.DefaultRequestHeaders.UserAgent.ParseAdd($"SpotifyTaskbarWidget/{vStr} (https://github.com/maxlmuller/spotify-taskbar-widget)");
     }
 
     public async Task<List<LyricLine>?> GetLyricsAsync(string title, string artist)
@@ -45,22 +47,32 @@ public class LyricsService
         {
             string url = $"https://lrclib.net/api/get?track_name={Uri.EscapeDataString(title)}&artist_name={Uri.EscapeDataString(artist)}";
             var response = await Http.GetAsync(url);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, L.LyricsNotFound) };
+            }
+            
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, L.LyricsTooManyRequests) };
+            }
+
             if (!response.IsSuccessStatusCode) 
             {
-                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, "[Servidor indisponível. Tente novamente mais tarde.]") };
+                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, L.LyricsServerError((int)response.StatusCode)) };
             }
             
             var json = await response.Content.ReadAsStringAsync();
             var lrc = JsonSerializer.Deserialize<LrcLibResponse>(json);
             if (string.IsNullOrWhiteSpace(lrc?.SyncedLyrics)) 
             {
-                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, "[Sem letras sincronizadas]") };
+                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, L.LyricsNoSync) };
             }
             
             _lastLyrics = ParseLrc(lrc.SyncedLyrics);
             if (_lastLyrics.Count == 0)
             {
-                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, "[Erro ao processar as letras]") };
+                return new List<LyricLine> { new LyricLine(TimeSpan.Zero, L.LyricsParseError) };
             }
 
             return _lastLyrics;
@@ -68,7 +80,7 @@ public class LyricsService
         catch (Exception ex)
         {
             Diag.Once("lyrics-fetch", $"Error fetching lyrics: {ex.Message}");
-            return new List<LyricLine> { new LyricLine(TimeSpan.Zero, "[Servidor indisponível. Tente novamente mais tarde.]") };
+            return new List<LyricLine> { new LyricLine(TimeSpan.Zero, L.LyricsNetworkError) };
         }
     }
     
@@ -89,45 +101,6 @@ public class LyricsService
                 }
             }
         }
-        var processedLines = new List<LyricLine>();
-        for (int i = 0; i < lines.Count; i++)
-        {
-            var line = lines[i];
-            if (line.Text.Length > 55)
-            {
-                var words = line.Text.Split(' ');
-                var currentPart = "";
-                var parts = new List<string>();
-                foreach(var w in words)
-                {
-                    if (currentPart.Length + w.Length + 1 > 55 && currentPart.Length > 0)
-                    {
-                        parts.Add(currentPart.Trim());
-                        currentPart = w;
-                    }
-                    else
-                    {
-                        currentPart += (currentPart.Length > 0 ? " " : "") + w;
-                    }
-                }
-                if (currentPart.Length > 0) parts.Add(currentPart.Trim());
-
-                TimeSpan endTime = i + 1 < lines.Count ? lines[i+1].Time : line.Time + TimeSpan.FromSeconds(parts.Count * 3);
-                TimeSpan totalDuration = endTime - line.Time;
-                
-                if (totalDuration.TotalSeconds <= 0) totalDuration = TimeSpan.FromSeconds(parts.Count * 2);
-
-                TimeSpan chunkDuration = TimeSpan.FromSeconds(totalDuration.TotalSeconds / parts.Count);
-                for (int j = 0; j < parts.Count; j++)
-                {
-                    processedLines.Add(new LyricLine(line.Time + TimeSpan.FromSeconds(chunkDuration.TotalSeconds * j), parts[j]));
-                }
-            }
-            else
-            {
-                processedLines.Add(line);
-            }
-        }
-        return processedLines;
+        return lines;
     }
 }
